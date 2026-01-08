@@ -1,0 +1,11 @@
+{
+  "name": "database-engine",
+  "version": "1.0.0",
+  "description": "A networked key-value database with custom TCP protocol",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Omar",
+  "license": "ISC"
+}
