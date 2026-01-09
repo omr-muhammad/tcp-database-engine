@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import MemoryStore from "./MemoryStore.js";
-import path from "node:path";
+import path, { parse } from "node:path";
 
 export default class DiskStore extends MemoryStore {
   #filePath;
@@ -9,6 +9,9 @@ export default class DiskStore extends MemoryStore {
   constructor(filePath = "./data/db.json") {
     super();
     this.#filePath = filePath;
+
+    // Auto load store when start
+    this.load();
   }
 
   #getFileDir() {
@@ -35,5 +38,21 @@ export default class DiskStore extends MemoryStore {
 
     // rename after success
     await fs.rename(tempFilePath, this.#filePath);
+  }
+
+  async load() {
+    try {
+      const fileData = await fs.readFile(this.#filePath, "utf-8");
+      const parsedData = JSON.parse(fileData);
+
+      this._store = new Map(Object.entries(parsedData));
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        this._store = new Map();
+        return;
+      }
+
+      throw error;
+    }
   }
 }
