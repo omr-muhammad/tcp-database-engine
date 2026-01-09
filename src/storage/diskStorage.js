@@ -55,4 +55,15 @@ export default class DiskStore extends MemoryStore {
       throw error;
     }
   }
+
+  async clear() {
+    try {
+      await fs.unlink(this.#filePath);
+    } catch (error) {
+      console.log("ERROR Msg: ", error.message);
+      console.log("ERROR: ", error);
+    } finally {
+      this._store = new Map();
+    }
+  }
 }
