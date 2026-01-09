@@ -1,8 +1,7 @@
 export default class MemoryStore {
-  #store = new Map();
-
-  // Database will be loaded here while initiating the engine
-  constructor() {}
+  constructor() {
+    this._store = new Map();
+  }
 
   #isJsonSerializable(data) {
     return JSON.stringify(data) ? true : false;
@@ -18,26 +17,26 @@ export default class MemoryStore {
         `Invalid value type, ${typeof value} is not JSON serializable.`
       );
 
-    this.#store.set(key, value);
+    this._store.set(key, value);
   }
 
   get(key) {
-    return this.#store.get(key);
+    return this._store.get(key);
   }
 
   delete(key) {
-    if (this.has(key)) this.#store.delete(key);
+    if (this.has(key)) this._store.delete(key);
   }
 
   has(key) {
-    return this.#store.has(key);
+    return this._store.has(key);
   }
 
   size() {
-    return this.#store.size();
+    return this._store.size();
   }
 
   keys() {
-    return this.#store.keys();
+    return Array.from(this._store.keys());
   }
 }
