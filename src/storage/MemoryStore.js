@@ -20,4 +20,8 @@ export default class MemoryStore {
 
     this.#store.set(key, value);
   }
+
+  get(key) {
+    return this.#store.get(key);
+  }
 }
