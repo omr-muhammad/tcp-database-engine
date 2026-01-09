@@ -36,7 +36,7 @@ export default class DiskStore extends MemoryStore {
     // write to tmp first
     await fs.writeFile(tempFilePath, dataJson, "utf-8");
 
-    // rename after success
+    // rename to override old data (atomic)
     await fs.rename(tempFilePath, this.#filePath);
   }
 
@@ -48,6 +48,7 @@ export default class DiskStore extends MemoryStore {
       this._store = new Map(Object.entries(parsedData));
     } catch (error) {
       if (error.code === "ENOENT") {
+        // When file not exits
         this._store = new Map();
         return;
       }
