@@ -24,4 +24,8 @@ export default class MemoryStore {
   get(key) {
     return this.#store.get(key);
   }
+
+  delete(key) {
+    if (this.#store.has(key)) this.#store.delete(key);
+  }
 }
