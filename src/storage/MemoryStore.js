@@ -32,4 +32,12 @@ export default class MemoryStore {
   has(key) {
     return this.#store.has(key);
   }
+
+  size() {
+    return this.#store.size();
+  }
+
+  keys() {
+    return this.#store.keys();
+  }
 }
