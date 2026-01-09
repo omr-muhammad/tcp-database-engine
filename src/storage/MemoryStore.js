@@ -26,6 +26,10 @@ export default class MemoryStore {
   }
 
   delete(key) {
-    if (this.#store.has(key)) this.#store.delete(key);
+    if (this.has(key)) this.#store.delete(key);
+  }
+
+  has(key) {
+    return this.#store.has(key);
   }
 }
