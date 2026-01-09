@@ -1,0 +1,39 @@
+import fs from "node:fs/promises";
+import MemoryStore from "./MemoryStore.js";
+import path from "node:path";
+
+export default class DiskStore extends MemoryStore {
+  #filePath;
+  #tmpFileName = "tempDB.json";
+
+  constructor(filePath = "./data/db.json") {
+    super();
+    this.#filePath = filePath;
+  }
+
+  #getFileDir() {
+    const fileIdx = this.#filePath.lastIndexOf("/");
+
+    return this.#filePath.slice(0, fileIdx);
+  }
+
+  async #ensureDataDir() {
+    await fs.mkdir("data", { recursive: true });
+  }
+
+  async flush() {
+    await this.#ensureDataDir();
+
+    const dataObject = Object.fromEntries(this._store);
+    const dataJson = JSON.stringify(dataObject);
+
+    const dbDir = this.#getFileDir();
+    const tempFilePath = path.resolve(dbDir, this.#tmpFileName);
+
+    // write to tmp first
+    await fs.writeFile(tempFilePath, dataJson, "utf-8");
+
+    // rename after success
+    await fs.rename(tempFilePath, this.#filePath);
+  }
+}
