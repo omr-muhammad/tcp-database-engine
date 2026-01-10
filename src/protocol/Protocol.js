@@ -8,40 +8,64 @@ export default class Protocol {
     LS: 4,
   };
 
-  static #BYTES_LIMITS = {
-    COMMAND: 1, // 1 Bytes
-    KEY: 2, // 2 Bytes
-    VALUE: 4, // 4 Bytes
+  static #LIMITS = {
+    command: 1, // 1 Bytes
+    key: 2, // 2 Bytes
+    value: 4, // 4 Bytes
   };
 
-  static serializeSet(key, value) {
+  static #getAllocatedBuffer(key, value) {
+    let size = this.#LIMITS.command + this.#LIMITS.key + key.length;
+
+    if (value) size += this.#LIMITS.value + value.length;
+
+    return Buffer.alloc(size);
+  }
+
+  static #writeSerializedCmd(buffer, cmd) {
+    buffer.writeUint8(this.#CMDs[cmd], 0);
+
+    return this.#LIMITS.command; // the offset
+  }
+
+  static #writeSerializedKey(key, buffer, offset) {
     const keyBuff = Buffer.from(key);
-    const valueBuff = Buffer.from(value);
     const keyLen = key.length;
-    const valueLen = value.length;
-
-    const totalBuffSize =
-      this.#BYTES_LIMITS.COMMAND +
-      this.#BYTES_LIMITS.KEY +
-      keyLen +
-      this.#BYTES_LIMITS.VALUE +
-      valueLen;
-
-    const buffer = Buffer.alloc(totalBuffSize);
-    let offset = 0;
-
-    buffer.writeUint8(this.#CMDs.SET, offset);
-    offset += this.#BYTES_LIMITS.COMMAND;
 
     buffer.writeUint16BE(keyLen, offset);
-    offset += this.#BYTES_LIMITS.KEY;
+    offset += this.#LIMITS.key;
 
     keyBuff.copy(buffer, offset);
     offset += keyLen;
 
+    return offset;
+  }
+
+  static serializeSet(key, value) {
+    const valueBuff = Buffer.from(value);
+    const valueLen = value.length;
+
+    const buffer = this.#getAllocatedBuffer(key, value);
+
+    // Command must match one of the CMDs properties
+    let offset = this.#writeSerializedCmd(buffer, "SET");
+
+    offset = this.#writeSerializedKey(key, buffer, offset);
+
     buffer.writeUInt32BE(valueLen, offset);
-    offset += this.#BYTES_LIMITS.VALUE;
+    offset += this.#LIMITS.value;
 
     valueBuff.copy(buffer, offset);
+
+    return buffer;
+  }
+
+  static serializeGet(key) {
+    const buffer = this.#getAllocatedBuffer(key);
+
+    let offset = this.#writeSerializedCmd(buffer, "GET");
+    this.#writeSerializedKey(key, buffer, offset);
+
+    return buffer;
   }
 }
