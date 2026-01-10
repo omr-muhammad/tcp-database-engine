@@ -41,6 +41,7 @@ export default class Protocol {
     return offset;
   }
 
+  // *************** Public Methods ***************
   static serializeSet(key, value) {
     const valueBuff = Buffer.from(value);
     const valueLen = value.length;
@@ -76,5 +77,42 @@ export default class Protocol {
     this.#writeSerializedKey(key, buffer, offset);
 
     return buffer;
+  }
+
+  static deserializeRequest(buffer) {
+    const payload = {};
+    let offset = 0;
+
+    // deserialize command
+    const type = buffer.readUint8(0);
+
+    if (type === 1) payload.type = "SET";
+    else if (type === 2) payload.type = "GET";
+    else if (type === 3) payload.type = "DEL";
+    else throw new Error("Error: Unkown type");
+
+    offset += this.#LIMITS.command;
+
+    // Deserialize Key
+    const keyBytes = buffer.readUint16BE(offset);
+
+    offset += this.#LIMITS.key; // start reading
+    const keyBuf = buffer.subarray(offset, keyBytes + offset);
+
+    payload.key = keyBuf.toString("utf-8");
+
+    offset += keyBytes;
+
+    // Deserialize Value
+    if (payload.type !== "SET") return payload;
+
+    const valueBytes = buffer.readUint32BE(offset);
+    offset += this.#LIMITS.value;
+
+    const valueBuf = buffer.subarray(offset, valueBytes + offset);
+
+    payload.value = valueBuf.toString("utf-8");
+
+    return payload;
   }
 }
