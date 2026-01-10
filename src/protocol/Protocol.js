@@ -68,4 +68,13 @@ export default class Protocol {
 
     return buffer;
   }
+
+  static serializeDelete(key) {
+    const buffer = this.#getAllocatedBuffer(key);
+
+    let offset = this.#writeSerializedCmd(buffer, "DEL");
+    this.#writeSerializedKey(key, buffer, offset);
+
+    return buffer;
+  }
 }
