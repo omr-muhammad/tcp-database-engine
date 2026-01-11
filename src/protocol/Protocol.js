@@ -6,6 +6,8 @@ export default class Protocol {
     GET: 2,
     DEL: 3,
     LS: 4,
+    RESPONSE_OK: 5,
+    RESPONSE_ERROR: 6,
   };
 
   static #LIMITS = {
@@ -86,10 +88,19 @@ export default class Protocol {
     // deserialize command
     const type = buffer.readUint8(0);
 
-    if (type === 1) payload.type = "SET";
-    else if (type === 2) payload.type = "GET";
-    else if (type === 3) payload.type = "DEL";
-    else throw new Error("Error: Unkown type");
+    switch (type) {
+      case 1:
+        payload.type = "SET";
+        break;
+      case 2:
+        payload.type = "GET";
+        break;
+      case 3:
+        payload.type = "DEL";
+        break;
+      default:
+        throw new Error("Error: Unkown type");
+    }
 
     offset += this.#LIMITS.command;
 
