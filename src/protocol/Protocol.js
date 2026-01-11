@@ -182,7 +182,7 @@ export default class Protocol {
     }
 
     offset += this.#limits.command;
-    const dataBytes = buffer.readUint32(offset);
+    const dataBytes = buffer.readUint32BE(offset);
     payload.dataBytes = dataBytes;
 
     offset += this.#limits.value;
