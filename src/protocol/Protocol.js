@@ -134,27 +134,38 @@ export default class Protocol {
     if (!status || !this.#allowedResponseStatus.includes(status))
       throw new Error("Error: Status Unkown.");
 
-    const dataBuff = Buffer.from(JSON.stringify(data));
-    const statusBuff = Buffer.alloc(this.#limits.command);
+    const dataString = JSON.stringify(data);
+    const dataBuff = Buffer.from(dataString);
 
+    const size = this.#limits.command + this.#limits.value + dataString.length;
+    const buffer = Buffer.alloc(size);
+
+    let offset = 0;
     switch (status) {
       case "ok":
-        statusBuff.writeUint8(this.#CMDs.RESPONSE_OK);
+        buffer.writeUint8(this.#CMDs.RESPONSE_OK, offset);
         break;
       case "fail":
-        statusBuff.writeUint8(this.#CMDs.RESPONSE_FAIL);
+        buffer.writeUint8(this.#CMDs.RESPONSE_FAIL, offset);
         break;
       case "error":
-        statusBuff.writeUint8(this.#CMDs.RESPONSE_ERROR);
+        buffer.writeUint8(this.#CMDs.RESPONSE_ERROR, offset);
         break;
     }
+    offset += this.#limits.command;
 
-    return Buffer.concat([statusBuff, dataBuff]);
+    buffer.writeUint32BE(dataString.length, offset);
+    offset += this.#limits.value;
+
+    dataBuff.copy(buffer, offset);
+
+    return buffer;
   }
 
   static deserializeResponse(buffer) {
     const payload = {};
-    const status = buffer.readUint8(0);
+    let offset = 0;
+    const status = buffer.readUint8(offset);
 
     switch (status) {
       case this.#CMDs.RESPONSE_OK:
@@ -170,9 +181,14 @@ export default class Protocol {
         throw new Error(`Unkown status type got ${status}`);
     }
 
-    const dataString = buffer.subarray(1).toString("utf-8");
-    const dataObj = JSON.parse(dataString);
+    offset += this.#limits.command;
+    const dataBytes = buffer.readUint32(offset);
+    payload.dataBytes = dataBytes;
 
+    offset += this.#limits.value;
+
+    const dataString = buffer.subarray(offset).toString("utf-8");
+    const dataObj = JSON.parse(dataString);
     payload.data = dataObj;
 
     return payload;
