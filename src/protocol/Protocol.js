@@ -14,10 +14,18 @@ export default class Protocol {
   static #allowedResponseStatus = ["ok", "fail", "error"];
 
   static #limits = {
+    lengthHead: 4, // 4 Bytes
     command: 1, // 1 Bytes
     key: 2, // 2 Bytes
     value: 4, // 4 Bytes
   };
+
+  static #addLengthHead(buffer) {
+    const headBuff = Buffer.allocUnsafe(this.#limits.lengthHead);
+    headBuff.writeUint32BE(buffer.byteLength);
+
+    return Buffer.concat([headBuff, buffer]);
+  }
 
   static #getAllocatedBuffer(key, value) {
     let size = this.#limits.command + this.#limits.key + key.length;
@@ -63,7 +71,7 @@ export default class Protocol {
 
     valueBuff.copy(buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
   static serializeGet(key) {
@@ -72,7 +80,7 @@ export default class Protocol {
     let offset = this.#writeSerializedCmd(buffer, "GET");
     this.#writeSerializedKey(key, buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
   static serializeDelete(key) {
@@ -81,7 +89,7 @@ export default class Protocol {
     let offset = this.#writeSerializedCmd(buffer, "DEL");
     this.#writeSerializedKey(key, buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
   static deserializeRequest(buffer) {
