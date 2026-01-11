@@ -15,6 +15,10 @@ server.listen(port, () => `Server is running on port ${port}`);
 
 server.on("connection", handleConnections);
 
+/**
+ *
+ * @param {net.Socket} socket
+ */
 function handleConnections(socket) {
   const clientId = id;
   console.log(`New connection with id: ${clientId}`);
@@ -42,6 +46,11 @@ function handleConnections(socket) {
   socket.on("end", () => {
     pool.delete(clientId);
     console.log(`Client with id: ${clientId} left!`);
+  });
+
+  socket.on("error", (err) => {
+    console.log("Socket Error: ", err);
+    socket.end();
   });
 
   pool.set(clientId, socket);
