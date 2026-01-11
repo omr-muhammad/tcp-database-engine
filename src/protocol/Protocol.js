@@ -150,6 +150,31 @@ export default class Protocol {
     }
 
     return Buffer.concat([statusBuff, dataBuff]);
-    const jsonResponse = JSON.stringify(response);
+  }
+
+  static deserializeResponse(buffer) {
+    const payload = {};
+    const status = buffer.readUint8(0);
+
+    switch (status) {
+      case this.#CMDs.RESPONSE_OK:
+        payload.status = "success";
+        break;
+      case this.#CMDs.RESPONSE_FAIL:
+        payload.status = "fail";
+        break;
+      case this.#CMDs.RESPONSE_ERROR:
+        payload.status = "error";
+        break;
+      default:
+        throw new Error(`Unkown status type got ${status}`);
+    }
+
+    const dataString = buffer.subarray(1).toString("utf-8");
+    const dataObj = JSON.parse(dataString);
+
+    payload.data = dataObj;
+
+    return payload;
   }
 }
