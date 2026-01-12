@@ -92,6 +92,18 @@ export default class Protocol {
     return this.#addLengthHead(buffer);
   }
 
+  static serializeList() {
+    const buffer = Buffer.alloc(this.#limits.lengthHead + this.#limits.command);
+
+    let offset = 0;
+    buffer.writeUint32BE(this.#limits.command, offset);
+    offset += this.#limits.lengthHead;
+
+    buffer.writeUint8(this.#CMDs.LS, offset);
+
+    return buffer;
+  }
+
   static deserializeRequest(buffer) {
     const payload = {};
     let offset = 0;
