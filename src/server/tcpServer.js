@@ -48,6 +48,11 @@ class TCPServer {
         status: "ok",
         data: { message: "Key is successfully deleted." },
       };
+    } else if (req.type === "LS") {
+      return {
+        status: "ok",
+        data: { keys: this.#store.keys() },
+      };
     } else {
       return {
         status: "fail",

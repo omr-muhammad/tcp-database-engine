@@ -121,6 +121,9 @@ export default class Protocol {
       case 3:
         payload.type = "DEL";
         break;
+      case 4:
+        payload.type = "LS";
+        break;
       default:
         throw new Error("Error: Unkown type");
     }
