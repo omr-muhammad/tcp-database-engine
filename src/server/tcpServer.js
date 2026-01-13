@@ -74,7 +74,8 @@ class TCPServer {
 
       if (requestBuff.byteLength > 3) messageSize = requestBuff.readUint32BE(0);
 
-      if (messageSize && requestBuff.byteLength === messageSize) {
+      // Add 4 to message size since header 4 bytes is not counted
+      if (messageSize && requestBuff.byteLength === messageSize + 4) {
         const messageBuff = requestBuff.subarray(4);
 
         const request = Protocol.deserializeRequest(messageBuff);
@@ -95,6 +96,13 @@ class TCPServer {
     socket.on("error", (err) => {
       console.log("Socket Error: ", err);
       socket.end();
+    });
+
+    // Handling Timeouts
+    socket.setTimeout(30000); // wait 30s for receiving chunks
+    socket.on("timeout", () => {
+      socket.end(); // kick from server
+      this.#pool.delete(clientId);
     });
 
     this.#pool.set(clientId, socket);
