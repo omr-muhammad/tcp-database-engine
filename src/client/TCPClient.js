@@ -45,6 +45,22 @@ class TCPClient {
     });
   }
 
+  #sendRequest(action, key, value) {
+    try {
+      let reqBuff;
+      if (action === "get") reqBuff = Protocol.serializeGet(key);
+      else if (action === "set") reqBuff = Protocol.serializeSet(key, value);
+      else if (action === "del") reqBuff = Protocol.serializeDelete(key);
+      // else if (action === "ls") reqBuff = Protocol.se
+      else throw new Error(`Invalid action type: ${action}.`);
+
+      this.#clientSocket.write(reqBuff);
+    } catch (error) {
+      console.log("Error Message: ", error.message);
+      console.log("Error: ", error);
+    }
+  }
+
   constructor(host, port) {
     this.#host = host;
     this.#port = port;
@@ -58,5 +74,17 @@ class TCPClient {
 
   disconnect() {
     this.#clientSocket.end();
+  }
+
+  set(key, value) {
+    this.#sendRequest("set", key, value);
+  }
+
+  get(key) {
+    this.#sendRequest("get", key);
+  }
+
+  delete(key) {
+    this.#sendRequest("del", key);
   }
 }
