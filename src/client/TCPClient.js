@@ -67,7 +67,7 @@ class TCPClient {
       if (action === "get") reqBuff = Protocol.serializeGet(key);
       else if (action === "set") reqBuff = Protocol.serializeSet(key, value);
       else if (action === "del") reqBuff = Protocol.serializeDelete(key);
-      // else if (action === "ls") reqBuff = Protocol.se
+      else if (action === "ls") reqBuff = Protocol.serializeList();
       else throw new Error(`Invalid action type: ${action}.`);
 
       this.#clientSocket.write(reqBuff);
@@ -102,5 +102,9 @@ class TCPClient {
 
   delete(key) {
     this.#sendRequest("del", key);
+  }
+
+  list() {
+    this.#sendRequest("ls");
   }
 }
