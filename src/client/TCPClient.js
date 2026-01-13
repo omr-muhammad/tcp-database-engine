@@ -5,6 +5,7 @@ class TCPClient {
   #host;
   #port;
   #clientSocket;
+  #failedConnections = 0;
 
   #applyEventListeners() {
     const fullRes = Buffer.alloc(0);
@@ -37,6 +38,21 @@ class TCPClient {
     this.#clientSocket.on("error", (error) => {
       console.log("Error Msg: ", error.message);
       console.log("Erorr: ", error);
+    });
+
+    // Handling Timeouts
+    this.#clientSocket.setTimeout(30000); // wait 30s for receiving chunks
+    this.#clientSocket.on("timeout", () => {
+      this.disconnect(); // leave server
+
+      console.log("Disconnected.");
+
+      if (this.#failedConnections < 3) {
+        console.log("Reconnecting...");
+        setTimeout(() => {
+          this.connect();
+        }, 3000);
+      }
     });
 
     // Handle Ctrl+C without showing ABORT_ERR trace
