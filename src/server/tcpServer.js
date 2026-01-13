@@ -9,11 +9,25 @@ const host = process.env.HOST;
 class TCPServer {
   #server = net.createServer();
   #store = new DiskStorage();
-  #pool = new Map();
+  #connections = new Map();
+  #locks = new Map();
   #idIncrementer = 1;
 
-  #handleRequest(req) {
+  async #aquireLock(key) {
+    while (this.#locks.get(key)) {
+      // Wait 1ms when key is locked for safe write
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    this.#locks.set(key, true);
+  }
+
+  #releaseLock(key) {
+    this.#locks.delete(key);
+  }
+
+  async #handleRequest(req) {
     if (req.type === "SET") {
+      this.#aquireLock(req.key);
       try {
         this.#store.set(req.key, req.value);
         return {
@@ -31,6 +45,8 @@ class TCPServer {
             message: error.message || "Unkown Error.",
           },
         };
+      } finally {
+        this.#releaseLock(req.key);
       }
     } else if (req.type === "GET") {
       const value = this.#store.get(req.key);
@@ -64,6 +80,21 @@ class TCPServer {
   }
 
   #handleConnections(socket) {
+    // Stop accepting new connections when limit reached.
+    if (this.#connections.size >= this.maxConnections) {
+      console.warn("Limit reached.");
+
+      const removeResponse = Protocol.serializeResponse("fail", {
+        message: "ERR max connections reached\n",
+      });
+
+      socket.write(removeResponse);
+      socket.on("finish", () => {
+        socket.end();
+      });
+      return;
+    }
+
     const clientId = idIncrementer;
     console.log(`New connection with id: ${clientId}`);
 
@@ -85,11 +116,14 @@ class TCPServer {
         const responseBuff = Protocol.serializeResponse(status, data);
 
         socket.write(responseBuff);
+        const activeClient = this.#connections.get(clientId);
+
+        if (activeClient) activeClient.lastActiveTime = new Date();
       }
     });
 
     socket.on("end", () => {
-      this.#pool.delete(clientId);
+      this.#connections.delete(clientId);
       console.log(`Client with id: ${clientId} left!`);
     });
 
@@ -102,14 +136,42 @@ class TCPServer {
     socket.setTimeout(30000); // wait 30s for receiving chunks
     socket.on("timeout", () => {
       socket.end(); // kick from server
-      this.#pool.delete(clientId);
+      this.#connections.delete(clientId);
     });
 
-    this.#pool.set(clientId, socket);
+    this.#connections.set(clientId, { socket, lastActiveTime: new Date() });
     this.#idIncrementer++;
   }
 
-  constructor(host = "localhost", port = 5000) {
+  #reduceConnectionSize(newLimit) {
+    if (newLimit >= this.#connections.size) return;
+
+    const toClose = newLimit - this.#connections.size;
+    const connectionsArr = Array.from(this.#connections.entries());
+
+    // Sort by last activity time (oldest first)
+    connectionsArr.sort((a, b) => a[1].lastActiveTime - b[1].lastActiveTime);
+
+    for (let i = 0; i < toClose; ++i) {
+      const [id, client] = connectionsArr[i];
+
+      const removeResponse = Protocol.serializeResponse("fail", {
+        message: "ERR max connections reached\n",
+      });
+
+      client.socket.write(removeResponse);
+
+      client.socket.on("finish", () => {
+        client.socket.end();
+      });
+
+      this.#connections.delete(id);
+    }
+  }
+
+  constructor(host = "localhost", port = 5000, maxConnections = 5000) {
+    this.maxConnections = maxConnections;
+
     this.#server.listen(port, host, () => {
       console.log(`Server is running on ${host}:${port}`);
     });
@@ -124,6 +186,29 @@ class TCPServer {
     this.#server.close(() => {
       console.log("Server closed successfully.");
     });
+  }
+
+  setMaxConnections(newLimit) {
+    if (newLimit === this.maxConnections) {
+      console.info(`Max connection is already set to ${newLimit}`);
+      return;
+    }
+
+    if (newLimit < 1) throw new Error("Max connections must be positive");
+
+    if (newLimit < this.#connections.size) {
+      console.warn(
+        `Warning new limit value: ${newLimit} is less than current ${
+          this.#connections.size
+        } clients`
+      );
+      // Handle asking to perform later
+
+      this.#reduceConnectionSize(newLimit);
+    }
+
+    this.maxConnections = newLimit;
+    console.log(`Max connections updated to ${newLimit}`);
   }
 }
 
