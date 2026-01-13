@@ -97,6 +97,13 @@ class TCPServer {
       socket.end();
     });
 
+    // Handling Timeouts
+    socket.setTimeout(30000); // wait 30s for receiving chunks
+    socket.on("timeout", () => {
+      socket.end(); // kick from server
+      this.#pool.delete(clientId);
+    });
+
     this.#pool.set(clientId, socket);
     this.#idIncrementer++;
   }
