@@ -10,10 +10,24 @@ class TCPServer {
   #server = net.createServer();
   #store = new DiskStorage();
   #connections = new Map();
+  #locks = new Map();
   #idIncrementer = 1;
 
-  #handleRequest(req) {
+  async #aquireLock(key) {
+    while (this.#locks.get(key)) {
+      // Wait 1ms when key is locked for safe write
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    this.#locks.set(key, true);
+  }
+
+  #releaseLock(key) {
+    this.#locks.delete(key);
+  }
+
+  async #handleRequest(req) {
     if (req.type === "SET") {
+      this.#aquireLock(req.key);
       try {
         this.#store.set(req.key, req.value);
         return {
@@ -31,6 +45,8 @@ class TCPServer {
             message: error.message || "Unkown Error.",
           },
         };
+      } finally {
+        this.#releaseLock(req.key);
       }
     } else if (req.type === "GET") {
       const value = this.#store.get(req.key);
