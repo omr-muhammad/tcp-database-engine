@@ -1,5 +1,5 @@
 import net from "node:net";
-import Protocol from "../protocol/Protocol";
+import Protocol from "../protocol/Protocol.js";
 
 class TCPClient {
   #host;
@@ -8,7 +8,7 @@ class TCPClient {
   #failedConnections = 0;
 
   #applyEventListeners() {
-    const fullRes = Buffer.alloc(0);
+    let fullRes = Buffer.alloc(0);
     let messageSize;
     this.#clientSocket.on("data", (buffer) => {
       fullRes = Buffer.concat([fullRes, buffer]);
@@ -31,6 +31,7 @@ class TCPClient {
           console.error("Client Deserialize Error: ", error);
         } finally {
           fullRes = Buffer.alloc(0);
+          messageSize = null;
         }
       }
     });
@@ -43,6 +44,12 @@ class TCPClient {
     this.#clientSocket.on("error", (error) => {
       console.log("Error Msg: ", error.message);
       console.log("Erorr: ", error);
+
+      if (error.code === "ECONNREFUSED") {
+        console.error(`Connection refused to ${this.#host}:${this.#port}`);
+
+        this.reconnect();
+      }
     });
 
     // Handling Timeouts
@@ -50,14 +57,7 @@ class TCPClient {
     this.#clientSocket.on("timeout", () => {
       this.disconnect(); // leave server
 
-      console.log("Disconnected.");
-
-      if (this.#failedConnections < 3) {
-        console.log("Reconnecting...");
-        setTimeout(() => {
-          this.connect();
-        }, 3000);
-      }
+      this.reconnect();
     });
 
     // Handle Ctrl+C without showing ABORT_ERR trace
@@ -88,13 +88,30 @@ class TCPClient {
   }
 
   connect() {
-    this.#clientSocket = net.connect({ host: this.#host, port: this.#port });
+    this.#clientSocket = net.connect(
+      { host: this.#host, port: this.#port },
+      () => {
+        console.log(`Connected to ${this.#host}:${this.#port}`);
+      }
+    );
 
     this.#applyEventListeners();
   }
 
   disconnect() {
     this.#clientSocket.end();
+    console.log("Disconnected.\n");
+  }
+
+  reconnect() {
+    this.#failedConnections++;
+
+    if (this.#failedConnections >= 3) {
+      console.log("Reconnecting...");
+      setTimeout(() => {
+        this.connect();
+      }, 3000);
+    }
   }
 
   set(key, value) {

@@ -6,14 +6,6 @@ export default class DiskStore extends MemoryStore {
   #filePath;
   #tmpFileName = "tempDB.json";
 
-  constructor(filePath = "./data/db.json") {
-    super();
-    this.#filePath = filePath;
-
-    // Auto load store when start
-    this.load();
-  }
-
   #getFileDir() {
     const fileIdx = this.#filePath.lastIndexOf("/");
 
@@ -22,6 +14,21 @@ export default class DiskStore extends MemoryStore {
 
   async #ensureDataDir() {
     await fs.mkdir("data", { recursive: true });
+  }
+
+  constructor(filePath = "./data/db.json") {
+    super();
+    this.#filePath = filePath;
+  }
+
+  async initialize() {
+    try {
+      await this.load();
+    } catch (error) {
+      console.error("Error Loading DB: ", error);
+
+      this._store = new Map();
+    }
   }
 
   async flush() {

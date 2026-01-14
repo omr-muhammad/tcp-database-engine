@@ -96,30 +96,53 @@ class TCPServer {
       }
     }
 
-    const clientId = idIncrementer;
+    const clientId = this.#idIncrementer;
     console.log(`New connection with id: ${clientId}`);
 
     let requestBuff = Buffer.alloc(0);
     let messageSize;
-    socket.on("data", (chunk) => {
-      requestBuff = Buffer.concat([requestBuff, chunk]);
+    socket.on("data", async (chunk) => {
+      try {
+        requestBuff = Buffer.concat([requestBuff, chunk]);
 
-      if (requestBuff.byteLength > 3) messageSize = requestBuff.readUint32BE(0);
+        if (requestBuff.byteLength > 3)
+          messageSize = requestBuff.readUint32BE(0);
 
-      // Add 4 to message size since header 4 bytes is not counted
-      if (messageSize && requestBuff.byteLength === messageSize + 4) {
-        const messageBuff = requestBuff.subarray(4);
+        // Add 4 to message size since header 4 bytes is not counted
+        if (messageSize && requestBuff.byteLength === messageSize + 4) {
+          const messageBuff = requestBuff.subarray(4);
 
-        const request = Protocol.deserializeRequest(messageBuff);
+          const request = Protocol.deserializeRequest(messageBuff);
 
-        const { status, data } = this.#handleRequest(request);
+          const { status, data } = await this.#handleRequest(request);
 
-        const responseBuff = Protocol.serializeResponse(status, data);
+          const responseBuff = Protocol.serializeResponse(status, data);
 
-        socket.write(responseBuff);
-        const activeClient = this.#connections.get(clientId);
+          socket.write(responseBuff);
+          const activeClient = this.#connections.get(clientId);
 
-        if (activeClient) activeClient.lastActiveTime = new Date();
+          if (activeClient) activeClient.lastActiveTime = new Date();
+
+          requestBuff = Buffer.alloc(0);
+          messageSize = null;
+        }
+      } catch (error) {
+        console.error("Request Processing Error: ", error);
+
+        try {
+          const errorResponse = Protocol.serializeResponse("error", {
+            message: error.message
+              ? error.message + "\n"
+              : "Internal server error!",
+          });
+
+          socket.write(errorResponse);
+        } catch (serializeError) {
+          console.error("Failed to send error response:", serializeError);
+        }
+
+        requestBuff = Buffer.alloc(0);
+        messageSize = null;
       }
     });
 
@@ -168,13 +191,16 @@ class TCPServer {
   constructor(host = "localhost", port = 5000, maxConnections = 5000) {
     this.maxConnections = maxConnections;
 
-    this.#server.listen(port, host, () => {
-      console.log(`Server is running on ${host}:${port}`);
+    // Start server after DB ready
+    this.#store.initialize().finally(() => {
+      this.#server.listen(port, host, () => {
+        console.log(`Server is running on ${host}:${port}`);
+      });
     });
   }
 
   start() {
-    server.on("connection", this.#handleConnections);
+    this.#server.on("connection", this.#handleConnections.bind(this));
   }
 
   async shutdown() {

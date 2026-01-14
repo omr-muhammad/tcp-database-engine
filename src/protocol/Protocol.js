@@ -81,7 +81,7 @@ export default class Protocol {
     const valueBuff = Buffer.from(valueStr);
     const valueLen = valueStr.length;
 
-    buffer.writeUint16BE(valueLen, offset);
+    buffer.writeUint32BE(valueLen, offset);
     offset += this.#limits.value;
 
     valueBuff.copy(buffer, offset);
