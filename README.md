@@ -2,7 +2,7 @@
 
 A custom key-value database built from scratch with TCP networking, binary protocol, persistence, and crash recovery.
 
-**Status:** Week 1 Complete ✅ (Storage Layer + Binary Protocol)
+**Status:** Week 2 Complete ✅ (Storage + Protocol + TCP Networking)
 
 ---
 
@@ -20,17 +20,20 @@ A custom key-value database built from scratch with TCP networking, binary proto
 
 ## ✨ Features
 
-### Currently Implemented (Week 1)
+### Currently Implemented (Weeks 1-2)
 
 - ✅ **In-Memory Storage** - Fast key-value operations using JavaScript Map
 - ✅ **Disk Persistence** - Atomic writes with crash safety
-- ✅ **Binary Protocol** - Custom wire protocol for efficient network communication
+- ✅ **Binary Protocol** - Custom wire protocol with length-prefix framing
+- ✅ **TCP Server** - Multi-client connection handling with async I/O
+- ✅ **TCP Client** - Auto-reconnection and connection pooling
+- ✅ **Concurrency Control** - Lock mechanism for safe concurrent writes
+- ✅ **Connection Management** - Max connections limit with graceful degradation
+- ✅ **Timeout Handling** - Auto-disconnect idle clients after 30s
 - ✅ **Data Validation** - Type checking and JSON serialization validation
 
-### Coming Soon (Week 2-4)
+### Coming Soon (Weeks 3-4)
 
-- 🔄 TCP Server & Client
-- 🔄 Multi-client connection handling
 - 🔄 B-Tree indexing for fast queries
 - 🔄 Write-Ahead Log (WAL) for crash recovery
 - 🔄 Transaction support (BEGIN/COMMIT/ROLLBACK)
@@ -46,28 +49,46 @@ A custom key-value database built from scratch with TCP networking, binary proto
 │                    TCP Database Engine                  │
 └─────────────────────────────────────────────────────────┘
 
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│   TCP        │      │   Binary     │      │   Storage    │
-│   Server     │ ───> │   Protocol   │ ───> │   Engine     │
-│   (Week 2)   │      │   (Week 1)   │      │   (Week 1)   │
-└──────────────┘      └──────────────┘      └──────────────┘
-                                                     │
-                                                     ▼
-                              ┌─────────────────────────────────┐
-                              │     Persistence Layer           │
-                              ├─────────────────────────────────┤
-                              │  • MemoryStore (Map-based)      │
-                              │  • DiskStore (JSON files)       │
-                              │  • WAL (Write-Ahead Log)        │
-                              └─────────────────────────────────┘
-                                             │
-                                             ▼
-                                    ┌────────────────┐
-                                    │   File System  │
-                                    │   /data/       │
-                                    │  - db.json     │
-                                    │  - wal.log     │
-                                    └────────────────┘
+        Multiple Clients
+              ↓ ↓ ↓
+        ┌──────────────┐
+        │  TCP Server  │
+        │  Port: 5432  │
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │   Protocol   │ ← Length-Prefix Framing
+        │   Parser     │ ← Binary Messages
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │ Connection   │ ← Max Limit: 5000
+        │ Manager      │ ← Timeout: 30s
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │ Concurrency  │ ← Lock Mechanism
+        │ Control      │ ← Safe Writes
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │   Storage    │ ← In-Memory Map
+        │   Engine     │ ← O(1) Operations
+        └──────────────┘
+              ↓
+┌─────────────────────────────────┐
+│     Persistence Layer           │
+├─────────────────────────────────┤
+│  • Atomic Writes (temp+rename)  │
+│  • Auto-load on startup         │
+│  • Graceful shutdown            │
+└─────────────────────────────────┘
+              ↓
+        ┌────────────┐
+        │ File System│
+        │  /data/    │
+        │  db.json   │
+        └────────────┘
 ```
 
 ### Data Flow
@@ -77,17 +98,23 @@ A custom key-value database built from scratch with TCP networking, binary proto
 ```
 Client Request
     ↓
-TCP Server (receives binary message)
+TCP Socket Connection
+    ↓
+Server receives binary message (length-prefix framing)
+    ↓
+Buffer accumulation (handle partial messages)
     ↓
 Protocol.deserializeRequest() → { type: 'SET', key: 'user:1', value: 'John' }
     ↓
-WAL.append() → writes to wal.log (crash safety)
+Acquire lock on key (prevent race conditions)
     ↓
 DiskStore.set() → updates in-memory Map
     ↓
-Protocol.serializeResponse() → { status: 'ok', data: null }
+Release lock
     ↓
-TCP Server (sends binary response)
+Protocol.serializeResponse() → { status: 'ok', data: {...} }
+    ↓
+TCP Server writes response to socket
     ↓
 Client receives confirmation
 ```
@@ -97,31 +124,57 @@ Client receives confirmation
 ```
 Client Request
     ↓
-TCP Server (receives binary message)
+TCP Socket Connection
+    ↓
+Server receives binary message
     ↓
 Protocol.deserializeRequest() → { type: 'GET', key: 'user:1' }
     ↓
-DiskStore.get() → reads from in-memory Map
+DiskStore.get() → reads from in-memory Map (O(1))
     ↓
-Protocol.serializeResponse() → { status: 'ok', data: 'John' }
+Protocol.serializeResponse() → { status: 'ok', data: { value: 'John' } }
     ↓
-TCP Server (sends binary response)
+TCP Server writes response to socket
     ↓
 Client receives value
 ```
 
-**Crash Recovery:**
+**Server Startup:**
 
 ```
-Server Starts
+TCPServer constructor
+    ↓
+DiskStore.initialize()
     ↓
 DiskStore.load() → reads db.json into memory
     ↓
-WAL.replay() → applies uncommitted operations from wal.log
+(If load fails, start with empty Map)
     ↓
-In-memory state is now consistent
+Server.listen(port, host)
     ↓
-Server ready to accept connections
+Ready to accept connections
+```
+
+**Connection Lifecycle:**
+
+```
+Client connects
+    ↓
+Check max connections limit
+    ↓
+If limit reached → Send error and close
+    ↓
+Assign client ID
+    ↓
+Track in connections Map
+    ↓
+Set 30s timeout
+    ↓
+Client sends requests... (multiple requests per connection)
+    ↓
+Client disconnects OR timeout
+    ↓
+Remove from connections Map
 ```
 
 ---
@@ -138,36 +191,60 @@ Server ready to accept connections
 
 All multi-byte integers use **Big-Endian** byte order.
 
+#### **Length-Prefix Framing** (Added in Week 2)
+
+Every message is prefixed with its total length to enable proper message framing over TCP streams:
+
+```
+┌──────────────┬─────────────────────┐
+│ Message Len  │  Message Payload    │
+│  4 bytes     │  N bytes            │
+└──────────────┴─────────────────────┘
+   uint32BE      (command + data)
+```
+
+This solves the **TCP streaming problem**: TCP delivers bytes as a stream, not discrete messages. The length prefix allows the server to buffer data until a complete message arrives.
+
 #### Request Messages
 
 **SET Command**
 
 ```
-┌──────────┬────────────┬─────────┬──────────────┬───────────┐
-│ Command  │ Key Length │   Key   │ Value Length │   Value   │
-│ 1 byte   │  2 bytes   │ N bytes │   4 bytes    │  M bytes  │
-└──────────┴────────────┴─────────┴──────────────┴───────────┘
-   0x01        uint16       utf-8      uint32        utf-8
+┌──────────────┬──────────┬────────────┬─────────┬──────────────┬───────────┐
+│ Message Len  │ Command  │ Key Length │   Key   │ Value Length │   Value   │
+│  4 bytes     │ 1 byte   │  2 bytes   │ N bytes │   4 bytes    │  M bytes  │
+└──────────────┴──────────┴────────────┴─────────┴──────────────┴───────────┘
+   uint32BE       0x01        uint16       utf-8      uint32        JSON
 ```
 
 **GET Command**
 
 ```
-┌──────────┬────────────┬─────────┐
-│ Command  │ Key Length │   Key   │
-│ 1 byte   │  2 bytes   │ N bytes │
-└──────────┴────────────┴─────────┘
-   0x02        uint16       utf-8
+┌──────────────┬──────────┬────────────┬─────────┐
+│ Message Len  │ Command  │ Key Length │   Key   │
+│  4 bytes     │ 1 byte   │  2 bytes   │ N bytes │
+└──────────────┴──────────┴────────────┴─────────┘
+   uint32BE       0x02        uint16       utf-8
 ```
 
 **DELETE Command**
 
 ```
-┌──────────┬────────────┬─────────┐
-│ Command  │ Key Length │   Key   │
-│ 1 byte   │  2 bytes   │ N bytes │
-└──────────┴────────────┴─────────┘
-   0x03        uint16       utf-8
+┌──────────────┬──────────┬────────────┬─────────┐
+│ Message Len  │ Command  │ Key Length │   Key   │
+│  4 bytes     │ 1 byte   │  2 bytes   │ N bytes │
+└──────────────┴──────────┴────────────┴─────────┘
+   uint32BE       0x03        uint16       utf-8
+```
+
+**LIST Command**
+
+```
+┌──────────────┬──────────┐
+│ Message Len  │ Command  │
+│  4 bytes     │ 1 byte   │
+└──────────────┴──────────┘
+   uint32BE       0x04
 ```
 
 #### Response Messages
@@ -179,17 +256,19 @@ All multi-byte integers use **Big-Endian** byte order.
 │  Status  │ Data Length │   Data   │
 │ 1 byte   │  4 bytes    │ N bytes  │
 └──────────┴─────────────┴──────────┘
-  0x05-0x07    uint32    JSON string
+  0x05-0x07    uint32    JSON object
 ```
+
+**Note:** Responses do NOT have a length prefix. The client reads the status byte, then the data length, then buffers until it has received all data bytes.
 
 ### Command Types
 
-| Command | Code   | Description             |
-| ------- | ------ | ----------------------- |
-| SET     | `0x01` | Store key-value pair    |
-| GET     | `0x02` | Retrieve value by key   |
-| DELETE  | `0x03` | Remove key-value pair   |
-| LIST    | `0x04` | List all keys (planned) |
+| Command | Code   | Description           |
+| ------- | ------ | --------------------- |
+| SET     | `0x01` | Store key-value pair  |
+| GET     | `0x02` | Retrieve value by key |
+| DELETE  | `0x03` | Remove key-value pair |
+| LIST    | `0x04` | List all keys         |
 
 ### Status Codes
 
@@ -203,28 +282,250 @@ All multi-byte integers use **Big-Endian** byte order.
 
 **Command:** `SET user:1 "John Doe"`
 
-**Binary Representation:**
+**Binary Representation (with length prefix):**
 
 ```
-Bytes:  01 00 06 75 73 65 72 3a 31 00 00 00 08 4a 6f 68 6e 20 44 6f 65
+Bytes:  00 00 00 14 01 00 06 75 73 65 72 3a 31 00 00 00 0a 22 4a 6f 68 6e 20 44 6f 65 22
 
 Breakdown:
+00 00 00 14  - Message length (20 bytes)
 01           - Command (SET = 0x01)
 00 06        - Key length (6 bytes)
 75 73 65 72  - Key bytes "user"
 3a 31        - Key bytes ":1"
-00 00 00 08  - Value length (8 bytes)
-4a 6f 68 6e  - Value bytes "John"
-20 44 6f 65  - Value bytes " Doe"
+00 00 00 0a  - Value length (10 bytes = JSON-stringified "John Doe")
+22 4a 6f 68 6e - Value bytes "\"John"
+20 44 6f 65 22 - Value bytes " Doe\""
 ```
+
+**How the Server Processes This:**
+
+1. **Receive first 4 bytes**: `00 00 00 14` → Message is 20 bytes long
+2. **Buffer until 20 bytes received**: Wait for complete message
+3. **Extract payload** (skip length prefix): Bytes 4-24
+4. **Deserialize**: Command=SET, Key="user:1", Value="John Doe"
+5. **Execute**: Store in Map
+6. **Respond**: Send success response
 
 ### Size Limits
 
-| Field         | Max Size            | Reason                           |
-| ------------- | ------------------- | -------------------------------- |
-| Key Length    | 65,535 bytes        | 2-byte unsigned integer (2^16-1) |
-| Value Length  | 4,294,967,295 bytes | 4-byte unsigned integer (2^32-1) |
-| Total Message | ~4.3 GB             | Practical limit (configurable)   |
+| Field          | Max Size            | Reason                           |
+| -------------- | ------------------- | -------------------------------- |
+| Message Length | 4,294,967,295 bytes | 4-byte unsigned integer (2^32-1) |
+| Key Length     | 65,535 bytes        | 2-byte unsigned integer (2^16-1) |
+| Value Length   | 4,294,967,295 bytes | 4-byte unsigned integer (2^32-1) |
+| Total Message  | ~4.3 GB             | Practical limit (configurable)   |
+
+**Note:** In practice, you should set lower limits (e.g., 1MB max message size) to prevent DoS attacks.
+
+---
+
+## 🌐 TCP Networking Layer
+
+### Server Architecture
+
+**File:** `src/server/TCPServer.js`
+
+**Purpose:** Accept and manage multiple client connections over TCP, process requests, and send responses.
+
+**Key Features:**
+
+1. **Connection Management**
+
+   - Tracks active connections in a Map with unique IDs
+   - Enforces max connection limit (default: 5000)
+   - Gracefully kicks oldest connections when limit exceeded
+   - Monitors last activity time for each client
+
+2. **Message Framing**
+
+   - Implements length-prefix protocol for TCP streaming
+   - Buffers incomplete messages until fully received
+   - Handles partial message delivery automatically
+
+3. **Concurrency Control**
+
+   - Simple lock mechanism prevents race conditions
+   - Locks acquired per-key during writes
+   - Non-blocking: waits 1ms if key is locked
+
+4. **Timeout Handling**
+
+   - 30-second idle timeout per connection
+   - Automatically disconnects inactive clients
+   - Frees server resources
+
+5. **Graceful Shutdown**
+   - Flushes database to disk before closing
+   - Closes server socket cleanly
+
+**API:**
+
+```javascript
+import TCPServer from "./src/server/TCPServer.js";
+
+// Create server
+const server = new TCPServer(
+  "localhost", // host
+  5432, // port
+  5000 // maxConnections (optional)
+);
+
+// Start accepting connections
+server.start();
+
+// Adjust connection limit dynamically
+server.setMaxConnections(10000);
+
+// Shutdown gracefully
+await server.shutdown();
+```
+
+**How Message Buffering Works:**
+
+```javascript
+// Problem: TCP delivers bytes as a stream, not discrete messages
+// Client sends: [Message1: 100 bytes][Message2: 50 bytes]
+// TCP might deliver: [75 bytes][75 bytes] - split across boundaries!
+
+// Solution: Length-prefix framing
+socket.on("data", (chunk) => {
+  // Accumulate bytes
+  requestBuffer = Buffer.concat([requestBuffer, chunk]);
+
+  // Try to read message length
+  if (requestBuffer.length >= 4) {
+    const messageSize = requestBuffer.readUint32BE(0);
+
+    // Check if we have the complete message
+    if (requestBuffer.length >= messageSize + 4) {
+      // Extract message (skip 4-byte length header)
+      const message = requestBuffer.subarray(4, messageSize + 4);
+
+      // Process message
+      handleRequest(message);
+
+      // Remove processed bytes
+      requestBuffer = requestBuffer.subarray(messageSize + 4);
+    }
+  }
+});
+```
+
+**Concurrency Control Example:**
+
+```javascript
+// Without locks: Race condition!
+// Client A: SET user:1 "Alice"
+// Client B: SET user:1 "Bob"
+// Result: Unpredictable! Could be "Alice" or "Bob"
+
+// With locks: Safe!
+async function handleSet(key, value) {
+  await acquireLock(key); // Wait if another client is writing this key
+  try {
+    store.set(key, value); // Safe to write
+  } finally {
+    releaseLock(key); // Always release
+  }
+}
+```
+
+---
+
+### Client Library
+
+**File:** `src/client/TCPClient.js`
+
+**Purpose:** Connect to the database server and send commands programmatically.
+
+**Key Features:**
+
+1. **Auto-Reconnection**
+
+   - Retries up to 3 times on connection failure
+   - 3-second delay between retries
+   - Handles `ECONNREFUSED` gracefully
+
+2. **Message Parsing**
+
+   - Deserializes binary responses
+   - Handles partial response delivery
+   - Displays results in human-readable format
+
+3. **Timeout Handling**
+
+   - 30-second timeout for responses
+   - Auto-disconnect on timeout
+   - Triggers reconnection logic
+
+4. **Graceful Shutdown**
+   - Handles SIGINT (Ctrl+C) cleanly
+   - Closes socket properly
+
+**API:**
+
+```javascript
+import TCPClient from "./src/client/TCPClient.js";
+
+// Create client
+const client = new TCPClient("localhost", 5432);
+
+// Connect
+client.connect();
+
+// Commands
+client.set("user:1", "John Doe");
+client.get("user:1");
+client.delete("user:1");
+client.list(); // Get all keys
+
+// Disconnect
+client.disconnect();
+```
+
+**Response Format:**
+
+All responses include:
+
+- `status`: "ok" | "fail" | "error"
+- `data`: Object containing:
+  - `message`: Success/error message
+  - `value`: Retrieved value (for GET)
+  - `keys`: Array of keys (for LIST)
+
+**Example Usage:**
+
+```javascript
+const client = new TCPClient("localhost", 5432);
+client.connect();
+
+// Wait for connection
+setTimeout(() => {
+  // Store data
+  client.set(
+    "session:abc",
+    JSON.stringify({
+      userId: 123,
+      expires: Date.now() + 3600000,
+    })
+  );
+
+  // Retrieve data
+  client.get("session:abc");
+
+  // List all keys
+  client.list();
+
+  // Cleanup
+  client.delete("session:abc");
+}, 1000);
+
+// Disconnect after 5 seconds
+setTimeout(() => {
+  client.disconnect();
+}, 5000);
+```
 
 ---
 
@@ -334,6 +635,28 @@ rename("tempDB.json", "db.json"); // ✅ Atomic operation - either succeeds comp
 }
 ```
 
+**Asynchronous Initialization:**
+
+To handle potential load errors gracefully, DiskStore now uses an explicit `initialize()` method:
+
+```javascript
+const store = new DiskStore("./data/db.json");
+
+// Initialize (loads data from disk)
+await store.initialize();
+
+// Now safe to use
+store.set("key", "value");
+```
+
+The server uses `.finally()` to ensure it starts even if database loading fails:
+
+```javascript
+store.initialize().finally(() => {
+  server.listen(port, host); // Start regardless of load result
+});
+```
+
 ---
 
 ### 3. Protocol (Binary Serialization)
@@ -420,6 +743,81 @@ npm install
 mkdir data
 ```
 
+### Running the Server
+
+```bash
+# Start the database server
+node src/server/TCPServer.js
+
+# Output:
+# Server is running on localhost:5432
+```
+
+**Environment Variables (optional):**
+
+```bash
+export TCP_PORT=5432
+export HOST=localhost
+node src/server/TCPServer.js
+```
+
+### Using the Client
+
+**Option 1: Programmatic Usage**
+
+```javascript
+import TCPClient from "./src/client/TCPClient.js";
+
+const client = new TCPClient("localhost", 5432);
+client.connect();
+
+// Wait a moment for connection
+setTimeout(() => {
+  // Store data
+  client.set("user:1", "John Doe");
+
+  // Retrieve data
+  setTimeout(() => client.get("user:1"), 500);
+
+  // List all keys
+  setTimeout(() => client.list(), 1000);
+
+  // Cleanup
+  setTimeout(() => client.disconnect(), 2000);
+}, 500);
+```
+
+**Option 2: Interactive Testing**
+
+```javascript
+// test-client.js
+import TCPClient from "./src/client/TCPClient.js";
+import readline from "readline";
+
+const client = new TCPClient("localhost", 5432);
+client.connect();
+
+const rl = readline.createInterface({
+  input: process.stdin,
+  output: process.stdout,
+});
+
+console.log("Commands: SET key value | GET key | DELETE key | LIST | EXIT");
+
+rl.on("line", (input) => {
+  const [cmd, key, ...value] = input.split(" ");
+
+  if (cmd === "SET") client.set(key, value.join(" "));
+  else if (cmd === "GET") client.get(key);
+  else if (cmd === "DELETE") client.delete(key);
+  else if (cmd === "LIST") client.list();
+  else if (cmd === "EXIT") {
+    client.disconnect();
+    process.exit(0);
+  }
+});
+```
+
 ### Running Tests
 
 ```bash
@@ -431,33 +829,9 @@ node tests/disk-store.test.js
 
 # Test Protocol
 node tests/protocol.test.js
-```
 
-### Example Usage (Current Week 1 Code)
-
-```javascript
-import DiskStore from "./src/storage/DiskStore.js";
-import Protocol from "./src/protocol/Protocol.js";
-
-// Initialize database
-const db = new DiskStore("./data/db.json");
-
-// Store data
-db.set("user:1", "John Doe");
-db.set("product:100", JSON.stringify({ name: "Laptop", price: 999 }));
-
-// Retrieve data
-console.log(db.get("user:1")); // 'John Doe'
-
-// Persist to disk
-await db.flush();
-
-// Test binary protocol
-const buffer = Protocol.serializeSet("key", "value");
-console.log("Serialized:", buffer);
-
-const request = Protocol.deserializeRequest(buffer);
-console.log("Deserialized:", request); // { type: 'SET', key: 'key', value: 'value' }
+# Test TCP Server/Client integration
+node tests/integration.test.js
 ```
 
 ---
@@ -472,15 +846,16 @@ tcp-database-engine/
 │   │   └── DiskStore.js        # Persistent storage with atomic writes
 │   ├── protocol/
 │   │   └── Protocol.js         # Binary protocol serialization
-│   ├── server/                 # [Week 2] TCP server implementation
-│   ├── client/                 # [Week 2] TCP client library
+│   ├── server/
+│   │   └── TCPServer.js        # TCP server with connection management
+│   ├── client/
+│   │   └── TCPClient.js        # TCP client library
 │   ├── wal/                    # [Week 3] Write-Ahead Log
 │   ├── index/                  # [Week 3] B-Tree indexing
 │   └── cli/                    # [Week 4] Interactive CLI
 ├── tests/                      # Unit and integration tests
 ├── data/                       # Database files (created at runtime)
-│   ├── db.json                 # Main database snapshot
-│   └── wal.log                 # Write-ahead log (Week 3)
+│   └── db.json                 # Main database snapshot
 ├── package.json
 └── README.md
 ```
@@ -497,15 +872,18 @@ tcp-database-engine/
 - [x] Request/response serialization
 - [x] Basic validation
 
-### 🔄 Week 2: TCP Networking (In Progress)
+### ✅ Week 2: TCP Networking (COMPLETED)
 
-- [ ] TCP server implementation
-- [ ] Connection handling
-- [ ] Multi-client support
-- [ ] TCP client library
-- [ ] Network error handling
+- [x] TCP server implementation
+- [x] Length-prefix message framing
+- [x] Multi-client connection handling
+- [x] TCP client library
+- [x] Connection limits and timeouts
+- [x] Concurrency control (locks)
+- [x] Network error handling
+- [x] Graceful shutdown
 
-### 📅 Week 3: Indexing & Reliability
+### 🔄 Week 3: Indexing & Reliability (In Progress)
 
 - [ ] B-Tree data structure
 - [ ] Write-Ahead Log (WAL)
@@ -530,32 +908,45 @@ tcp-database-engine/
 
 ## 🎯 Learning Outcomes
 
-By building this project, you'll understand:
+By building this project, hands-on experience gained with:
 
 1. **Network Programming**
 
    - TCP socket programming in Node.js
    - Binary protocols vs text protocols
+   - Message framing and buffering
    - Connection lifecycle management
+   - Handling partial message delivery
+   - Client-server architecture
 
-2. **Data Structures**
+2. **Concurrency & Race Conditions**
 
-   - Hash maps (JavaScript Map)
-   - B-Trees for indexing
-   - Log-structured storage
+   - Why locks are needed in multi-client scenarios
+   - Per-key locking strategies
+   - Async/await in event-driven systems
 
-3. **Systems Programming**
+3. **Data Structures**
+
+   - Hash maps (JavaScript Map) - O(1) operations
+   - B-Trees for indexing (Week 3)
+   - Log-structured storage (Week 3)
+
+4. **Systems Programming**
 
    - File I/O and persistence
-   - Atomic operations
-   - Crash recovery mechanisms
-   - Concurrency and race conditions
+   - Atomic operations (write-to-temp + rename)
+   - Buffer management in Node.js
+   - Binary data serialization
+   - Error handling in distributed systems
 
-4. **Database Internals**
+5. **Database Internals**
    - How key-value stores work (Redis, Memcached)
-   - ACID properties
-   - Write-ahead logging
-   - Query optimization
+   - Length-prefix framing (used by PostgreSQL, MySQL)
+   - Connection pooling and limits
+   - Graceful degradation under load
+   - ACID properties (upcoming weeks)
+   - Write-ahead logging (upcoming)
+   - Query optimization (upcoming)
 
 ---
 
@@ -583,6 +974,8 @@ MIT License - Feel free to use this for learning!
 
 ---
 
-**Current Version:** v0.1.0-week1  
+**Current Version:** v0.2.0-week2  
 **Last Updated:** [Current Date]  
 **Status:** Active Development 🚀
+
+**Next Milestone:** Week 3 - B-Tree Indexing & Write-Ahead Log
