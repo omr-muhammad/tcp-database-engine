@@ -84,14 +84,11 @@ class TCPServer {
     if (this.#connections.size >= this.maxConnections) {
       console.warn("Limit reached.");
 
-      const removeResponse = Protocol.serializeResponse("fail", {
+      const removeResponse = Protocol.serializeResponse("error", {
         message: "ERR max connections reached\n",
       });
 
-      socket.write(removeResponse);
-      socket.on("finish", () => {
-        socket.end();
-      });
+      socket.end(removeResponse);
       return;
     }
 
@@ -129,7 +126,6 @@ class TCPServer {
 
     socket.on("error", (err) => {
       console.log("Socket Error: ", err);
-      socket.end();
     });
 
     // Handling Timeouts
@@ -155,15 +151,11 @@ class TCPServer {
     for (let i = 0; i < toClose; ++i) {
       const [id, client] = connectionsArr[i];
 
-      const removeResponse = Protocol.serializeResponse("fail", {
+      const removeResponse = Protocol.serializeResponse("error", {
         message: "ERR max connections reached\n",
       });
 
-      client.socket.write(removeResponse);
-
-      client.socket.on("finish", () => {
-        client.socket.end();
-      });
+      client.socket.end(removeResponse);
 
       this.#connections.delete(id);
     }
