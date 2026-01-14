@@ -19,14 +19,19 @@ class TCPClient {
       if (messageSize && fullRes.byteLength === messageSize + 4) {
         const responseBuff = fullRes.subarray(4);
 
-        const res = Protocol.deserializeResponse(responseBuff);
+        try {
+          const res = Protocol.deserializeResponse(responseBuff);
 
-        const label = res.data.value ? "Value" : "Message";
+          const label = res.data.value ? "Value" : "Message";
 
-        console.log(`Response Status: ${res.status}.`);
-        console.log(`${label}: ${res.data[label.toLowerCase()]}`);
-
-        fullRes = Buffer.alloc(0);
+          console.log(`Response Status: ${res.status}.`);
+          console.log(`${label}: ${res.data[label.toLowerCase()]}`);
+        } catch (error) {
+          console.log("Error Message: ", error.message);
+          console.error("Client Deserialize Error: ", error);
+        } finally {
+          fullRes = Buffer.alloc(0);
+        }
       }
     });
 
