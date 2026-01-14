@@ -13,11 +13,15 @@ export default class Protocol {
 
   static #allowedResponseStatus = ["ok", "fail", "error"];
 
+  static #maxKeyLength = 0xffff; // 0xFFFF = 65535
+  static #maxValueLength = 0xffffffff; // 0xFFFFFFFF = 4294967295
+
+  // In Bytes
   static #limits = {
-    lengthHead: 4, // 4 Bytes
-    command: 1, // 1 Bytes
-    key: 2, // 2 Bytes
-    value: 4, // 4 Bytes
+    lengthHead: 4,
+    command: 1,
+    key: 2,
+    value: 4,
   };
 
   static #addLengthHead(buffer) {
@@ -36,12 +40,22 @@ export default class Protocol {
   }
 
   static #writeSerializedCmd(buffer, cmd) {
+    if (!this.#CMDs[cmd])
+      throw new Error(
+        `Unkonw command got: ${cmd} use: ${Object.keys(this.#CMDs).join(" - ")}`
+      );
+
     buffer.writeUint8(this.#CMDs[cmd], 0);
 
     return this.#limits.command; // the offset
   }
 
   static #writeSerializedKey(key, buffer, offset) {
+    if (key.length > this.#maxKeyLength)
+      throw new Error(
+        `Error: out of range ${key.length} > ${this.#maxKeyLength}`
+      );
+
     const keyBuff = Buffer.from(key);
     const keyLen = key.length;
 
@@ -50,6 +64,28 @@ export default class Protocol {
 
     keyBuff.copy(buffer, offset);
     offset += keyLen;
+
+    return offset;
+  }
+
+  static #writeSerializedValue(value, buffer, offset) {
+    if (!value) throw new Error(`Invalid value type got: ${typeof value}`);
+
+    const valueStr = JSON.stringify(value);
+
+    if (valueStr.length > this.#maxValueLength)
+      throw new Error(
+        `Error: out of range ${valueStr.length} > ${this.#maxValueLength}`
+      );
+
+    const valueBuff = Buffer.from(valueStr);
+    const valueLen = valueStr.length;
+
+    buffer.writeUint16BE(valueLen, offset);
+    offset += this.#limits.value;
+
+    valueBuff.copy(buffer, offset);
+    offset += valueLen;
 
     return offset;
   }
@@ -66,10 +102,7 @@ export default class Protocol {
 
     offset = this.#writeSerializedKey(key, buffer, offset);
 
-    buffer.writeUInt32BE(valueLen, offset);
-    offset += this.#limits.value;
-
-    valueBuff.copy(buffer, offset);
+    offset = this.#writeSerializedValue(value, buffer, offset);
 
     return this.#addLengthHead(buffer);
   }
@@ -157,6 +190,11 @@ export default class Protocol {
     if (!status || !this.#allowedResponseStatus.includes(status))
       throw new Error("Error: Status Unkown.");
 
+    if (!data)
+      throw new Error(
+        "Response must contain a data object carrying response status."
+      );
+
     const dataString = JSON.stringify(data);
     const dataBuff = Buffer.from(dataString);
 
@@ -206,7 +244,6 @@ export default class Protocol {
 
     offset += this.#limits.command;
     const dataBytes = buffer.readUint32BE(offset);
-    payload.dataBytes = dataBytes;
 
     offset += this.#limits.value;
 

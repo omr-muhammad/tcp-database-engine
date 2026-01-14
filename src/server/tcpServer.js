@@ -84,12 +84,16 @@ class TCPServer {
     if (this.#connections.size >= this.maxConnections) {
       console.warn("Limit reached.");
 
-      const removeResponse = Protocol.serializeResponse("error", {
-        message: "ERR max connections reached\n",
-      });
+      try {
+        const removeResponse = Protocol.serializeResponse("error", {
+          message: "ERR max connections reached\n",
+        });
 
-      socket.end(removeResponse);
-      return;
+        return socket.end(removeResponse);
+      } catch (error) {
+        console.log("Error Message: ", error.message);
+        console.log("Error: ", error);
+      }
     }
 
     const clientId = idIncrementer;
