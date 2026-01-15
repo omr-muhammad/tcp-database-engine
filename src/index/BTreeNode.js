@@ -4,7 +4,7 @@ export default class BTreeNode {
     this.children = [];
     this.maxKeys = maxKeys;
     this.isLeaf = isLeaf;
-    parent = null;
+    this.parent = null;
   }
 
   isFull() {
@@ -12,10 +12,12 @@ export default class BTreeNode {
   }
 
   insertAt(idx, key, value) {
-    this.pairs = this.keys.toSpliced(idx, 0, { key, value });
+    this.pairs = this.pairs.toSpliced(idx, 0, { key, value });
   }
 
   getIndexToInsert(key) {
-    return this.pairs.findIndex((pair) => pair.key > key);
+    const insertIndex = this.pairs.findIndex((pair) => pair.key > key);
+
+    return insertIndex !== -1 ? insertIndex : this.pairs.length;
   }
 }
