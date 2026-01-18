@@ -10,8 +10,8 @@ export default class BPlusTree {
     while (min <= max) {
       mid = Math.floor((min + max) / 2);
 
-      if (key === list[mid].key) return mid;
-      else if (key < list[mid].key) max = mid - 1;
+      if (key === list[mid]) return mid;
+      else if (key < list[mid]) max = mid - 1;
       else min = mid + 1;
     }
 
@@ -19,7 +19,7 @@ export default class BPlusTree {
     return min;
   }
 
-  #searchNode(node, key) {
+  #searchNode(node, key, mode = "search") {
     const idx = this.#binarySearch(node.keys, key); // Potential index
     const susKey = node.keys[idx];
 
@@ -27,9 +27,10 @@ export default class BPlusTree {
     // Look at #binarySearch to know why passing idx directly is correct
     if (!node.isLeaf) return this.#searchNode(node.children[idx], key);
 
-    if (susKey !== key) return null;
+    if (susKey && susKey !== key)
+      return mode === "range" ? { node, start: idx } : null;
 
-    return node.pairs[idx]; // data pairs key/value
+    return mode === "range" ? { node, start: idx } : node.pairs[idx]; // data pairs key/value
   }
 
   /* ******************************** INSERTION ******************************** */
@@ -137,6 +138,20 @@ export default class BPlusTree {
     if (node.isFull()) return this.#split(node);
   }
 
+  #getInRange(node, endKey, result, startIdx = 0) {
+    // For the end of the tree
+    if (node === null) return;
+
+    for (let i = startIdx; i < node.keys.length; ++i) {
+      if (node.keys[i] <= endKey) result.push(node.pairs[i]);
+      // Recursion exit point
+      else return;
+    }
+
+    // if no return go next node
+    this.#getInRange(node.next, endKey, result);
+  }
+
   constructor(m = 4) {
     this.max = m;
     this.root = new BPTreeNode(m - 1, true);
@@ -148,5 +163,14 @@ export default class BPlusTree {
 
   insert(key, value) {
     this.#addToNode(this.root, key, value);
+  }
+
+  range(startKey, endKey) {
+    const startPoint = this.#searchNode(this.root, startKey, "range");
+    const range = [];
+
+    this.#getInRange(startPoint.node, endKey, range, startPoint.start);
+
+    return range;
   }
 }

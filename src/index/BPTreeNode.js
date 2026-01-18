@@ -24,8 +24,8 @@ export default class BPTreeNode {
     while (min < max) {
       mid = Math.floor((min + max) / 2);
 
-      if (key === this.keys[mid].key) return mid;
-      else if (key < this.keys[mid].key) max = mid - 1;
+      if (key === this.keys[mid]) return mid;
+      else if (key < this.keys[mid]) max = mid - 1;
       else min = mid + 1;
     }
 
