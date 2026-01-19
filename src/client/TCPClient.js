@@ -73,6 +73,8 @@ class TCPClient {
       else if (action === "set") reqBuff = Protocol.serializeSet(key, value);
       else if (action === "del") reqBuff = Protocol.serializeDelete(key);
       else if (action === "ls") reqBuff = Protocol.serializeList();
+      else if (action === "range")
+        reqBuff = Protocol.serializeRange(key.start, key.end);
       else throw new Error(`Invalid action type: ${action}.`);
 
       this.#clientSocket.write(reqBuff);
@@ -92,7 +94,7 @@ class TCPClient {
       { host: this.#host, port: this.#port },
       () => {
         console.log(`Connected to ${this.#host}:${this.#port}`);
-      }
+      },
     );
 
     this.#applyEventListeners();
@@ -128,5 +130,9 @@ class TCPClient {
 
   list() {
     this.#sendRequest("ls");
+  }
+
+  range(startKey, endKey) {
+    this.#sendRequest("range", { start: startKey, end: endKey });
   }
 }
