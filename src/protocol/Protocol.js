@@ -9,6 +9,7 @@ export default class Protocol {
     RESPONSE_OK: 5,
     RESPONSE_FAIL: 6,
     RESPONSE_ERROR: 7,
+    RANGE: 8,
   };
 
   static #allowedResponseStatus = ["ok", "fail", "error"];
@@ -32,7 +33,12 @@ export default class Protocol {
   }
 
   static #getAllocatedBuffer(key, value) {
-    let size = this.#limits.command + this.#limits.key + key.length;
+    let size = this.#limits.command + this.#limits.key;
+
+    if (typeof key === "object") {
+      if (key.start && key.end) size += key.start.length + key.end.length;
+      else throw new Error("Missing range key values.");
+    } else size += key.length;
 
     if (value) size += this.#limits.value + value.length;
 
@@ -42,7 +48,7 @@ export default class Protocol {
   static #writeSerializedCmd(buffer, cmd) {
     if (!this.#CMDs[cmd])
       throw new Error(
-        `Unkonw command got: ${cmd} use: ${Object.keys(this.#CMDs).join(" - ")}`
+        `Unkonw command got: ${cmd} use: ${Object.keys(this.#CMDs).join(" - ")}`,
       );
 
     buffer.writeUint8(this.#CMDs[cmd], 0);
@@ -53,7 +59,7 @@ export default class Protocol {
   static #writeSerializedKey(key, buffer, offset) {
     if (key.length > this.#maxKeyLength)
       throw new Error(
-        `Error: out of range ${key.length} > ${this.#maxKeyLength}`
+        `Error: out of range ${key.length} > ${this.#maxKeyLength}`,
       );
 
     const keyBuff = Buffer.from(key);
@@ -75,7 +81,7 @@ export default class Protocol {
 
     if (valueStr.length > this.#maxValueLength)
       throw new Error(
-        `Error: out of range ${valueStr.length} > ${this.#maxValueLength}`
+        `Error: out of range ${valueStr.length} > ${this.#maxValueLength}`,
       );
 
     const valueBuff = Buffer.from(valueStr);
@@ -136,6 +142,18 @@ export default class Protocol {
     return buffer;
   }
 
+  static serializeRange(startKey, endKey) {
+    const buffer = this.#getAllocatedBuffer({ start: startKey, end: endKey });
+
+    let offset = 0;
+
+    offset = this.#writeSerializedCmd(buffer, "RANGE");
+    offset = this.#writeSerializedKey(startKey, buffer, offset);
+    offset = this.#writeSerializedKey(endKey, buffer, offset);
+
+    return this.#addLengthHead(buffer);
+  }
+
   static deserializeRequest(buffer) {
     const payload = {};
     let offset = 0;
@@ -156,7 +174,7 @@ export default class Protocol {
 
     if (keyBytes > this.#maxKeyLength)
       throw new Error(
-        `Error: key length exceeded the limits. only 2 bytes maximum.`
+        `Error: key length exceeded the limits. only 2 bytes maximum.`,
       );
 
     offset += this.#limits.key; // start reading
@@ -167,16 +185,23 @@ export default class Protocol {
     offset += keyBytes;
 
     // Deserialize Value
-    if (payload.type !== "SET") return payload;
+    if (payload.type === "RANGE") {
+      const endKeyBytes = buffer.readUint16BE(offset);
 
-    const valueBytes = buffer.readUint32BE(offset);
-    offset += this.#limits.value;
+      offset += this.#limits.key;
+      const endKeyBuf = buffer.subarray(offset, endKeyBytes + offset);
 
-    const valueBuf = buffer.subarray(offset, valueBytes + offset);
+      payload.endKey = endKeyBuf.toString("utf-8");
+    } else if (payload.type === "SET") {
+      const valueBytes = buffer.readUint32BE(offset);
+      offset += this.#limits.value;
 
-    const valueString = valueBuf.toString("utf-8");
-    const parsedValue = JSON.parse(valueString);
-    payload.value = parsedValue;
+      const valueBuf = buffer.subarray(offset, valueBytes + offset);
+
+      const valueString = valueBuf.toString("utf-8");
+      const parsedValue = JSON.parse(valueString);
+      payload.value = parsedValue;
+    }
 
     return payload;
   }
@@ -187,7 +212,7 @@ export default class Protocol {
 
     if (!data)
       throw new Error(
-        "Response must contain a data object carrying response status and value or message."
+        "Response must contain a data object carrying response status and value or message.",
       );
 
     const dataString = JSON.stringify(data);
