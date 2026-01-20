@@ -207,8 +207,18 @@ export default class MemoryStore {
   constructor(treePath = "./data/btree.db") {
     this.#size = 0;
     this.#treePath = treePath;
+  }
 
-    this.#loadTree();
+  /**
+   *
+   * @param {String} filePath - A path to store data
+   * @param {Number} blockSize - The space for node in file in bytes default (4 * 1024 => 4 KB)
+   * @returns {MemoryStore}
+   */
+  static async create(filePath, blockSize) {
+    const store = new MemoryStore(filePath);
+    await store.#loadTree(blockSize);
+    return store;
   }
 
   // #isJsonSerializable(data) {
