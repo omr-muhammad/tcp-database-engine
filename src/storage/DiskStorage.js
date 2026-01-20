@@ -13,7 +13,7 @@ export default class DiskStore extends MemoryStore {
   }
 
   async #ensureDataDir() {
-    await fs.mkdir("data", { recursive: true });
+    await fs.mkdir(this.#getFileDir, { recursive: true });
   }
 
   constructor(filePath = "./data/db.json") {

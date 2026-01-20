@@ -30,7 +30,7 @@ export default class BPlusTree {
     if (susKey && susKey !== key)
       return mode === "range" ? { node, start: idx } : null;
 
-    return mode === "range" ? { node, start: idx } : node.pairs[idx]; // data pairs key/value
+    return mode === "range" ? { node, start: idx } : node.pairs[idx].value; // data pairs key/value
   }
 
   /* ******************************** INSERTION ******************************** */
