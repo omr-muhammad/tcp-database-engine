@@ -22,10 +22,10 @@ class TCPClient {
         try {
           const res = Protocol.deserializeResponse(responseBuff);
 
-          const label = res.data.value ? "Value" : "Message";
+          const label = res.data ? "Data" : "Message";
 
           console.log(`Response Status: ${res.status}.`);
-          console.log(`${label}: ${res.data[label.toLowerCase()]}`);
+          console.log(`${label}: ${res[label.toLowerCase()]}`);
         } catch (error) {
           console.log("Error Message: ", error.message);
           console.error("Client Deserialize Error: ", error);

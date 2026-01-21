@@ -197,10 +197,9 @@ export default class Protocol {
       offset += this.#limits.value;
 
       const valueBuf = buffer.subarray(offset, valueBytes + offset);
-
-      const valueString = valueBuf.toString("utf-8");
-      const parsedValue = JSON.parse(valueString);
-      payload.value = parsedValue;
+      // const valueString = valueBuf.toString("utf-8");
+      // const parsedValue = JSON.parse(valueString);
+      payload.valueBuf = valueBuf;
     }
 
     return payload;

@@ -1,9 +1,10 @@
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
-import path from "node:path";
+// import path from "node:path";
 
 export default class DiskStore {
   #dataPath;
-  #tmpFileName = "tempDB.db";
+  // #tmpFileName = path.resolve(this.#getFileDir(), "tempDB.db");
   #maxDataBytes = 4.194e6;
   #isInitialized = false;
 
@@ -52,10 +53,10 @@ export default class DiskStore {
 
       await fileHandler.writev([head, buffer], offset);
 
-      return offset;
+      return { offset };
     } catch (err) {
       console.error("Error Writing to file 💥", err);
-      return null;
+      return { offset: null, message: err.message || "failed to write data." };
     } finally {
       await fileHandler.close();
     }
@@ -89,12 +90,44 @@ export default class DiskStore {
         position: offset + 4, // start place to read from file
       });
 
-      return dataBuff;
+      return { data: dataBuff };
     } catch (err) {
       console.error("Error Reading file 💥", err);
+      return {
+        data: undefined,
+        message: err.message || "Failed to read data.",
+      };
     } finally {
       await fileHandler.close();
     }
+  }
+
+  async readRange(offsets, concurrency = 20) {
+    const results = [];
+
+    for (let i = 0; i < offsets.length; i += concurrency) {
+      const chunk = offsets.slice(i, i + concurrency);
+
+      try {
+        const data = await Promise.all(
+          chunk.map((offset) => this.readValue(offset)),
+        );
+
+        const buffers = data.map(({ data }) => data);
+
+        results.push(...buffers);
+      } catch (err) {
+        console.error("Error Reading file 💥", err);
+        return {
+          data: undefined,
+          message: err.message || "Failed to read data in range",
+        };
+      }
+    }
+
+    return {
+      data: results,
+    };
   }
 
   // async flush() {

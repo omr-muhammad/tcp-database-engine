@@ -1,5 +1,4 @@
 import { Buffer } from "node:buffer";
-import { Readable } from "node:stream";
 import fs from "node:fs/promises";
 
 import BPTree from "../index/BPTree.js";
@@ -248,7 +247,7 @@ export default class MemoryStore {
   range(startKey, endKey) {
     const result = this.#tree.range(startKey, endKey);
 
-    return result; // array carrying the places for stored data
+    return result; // array carrying the offsets of data in storage file
   }
 
   // delete(key) {

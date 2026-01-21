@@ -143,7 +143,7 @@ export default class BPlusTree {
     if (node === null) return;
 
     for (let i = startIdx; i < node.keys.length; ++i) {
-      if (node.keys[i] <= endKey) result.push(node.pairs[i]);
+      if (node.keys[i] <= endKey) result.push(node.pairs[i].value);
       // Recursion exit point
       else return;
     }
