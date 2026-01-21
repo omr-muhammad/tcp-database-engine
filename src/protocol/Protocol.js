@@ -14,10 +14,18 @@ export default class Protocol {
   static #allowedResponseStatus = ["ok", "fail", "error"];
 
   static #limits = {
+    lengthHead: 4, // 4 Bytes
     command: 1, // 1 Bytes
     key: 2, // 2 Bytes
     value: 4, // 4 Bytes
   };
+
+  static #addLengthHead(buffer) {
+    const headBuff = Buffer.allocUnsafe(this.#limits.lengthHead);
+    headBuff.writeUint32BE(buffer.byteLength);
+
+    return Buffer.concat([headBuff, buffer]);
+  }
 
   static #getAllocatedBuffer(key, value) {
     let size = this.#limits.command + this.#limits.key + key.length;
@@ -63,7 +71,7 @@ export default class Protocol {
 
     valueBuff.copy(buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
   static serializeGet(key) {
@@ -72,7 +80,7 @@ export default class Protocol {
     let offset = this.#writeSerializedCmd(buffer, "GET");
     this.#writeSerializedKey(key, buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
   static serializeDelete(key) {
@@ -80,6 +88,18 @@ export default class Protocol {
 
     let offset = this.#writeSerializedCmd(buffer, "DEL");
     this.#writeSerializedKey(key, buffer, offset);
+
+    return this.#addLengthHead(buffer);
+  }
+
+  static serializeList() {
+    const buffer = Buffer.alloc(this.#limits.lengthHead + this.#limits.command);
+
+    let offset = 0;
+    buffer.writeUint32BE(this.#limits.command, offset);
+    offset += this.#limits.lengthHead;
+
+    buffer.writeUint8(this.#CMDs.LS, offset);
 
     return buffer;
   }
@@ -100,6 +120,9 @@ export default class Protocol {
         break;
       case 3:
         payload.type = "DEL";
+        break;
+      case 4:
+        payload.type = "LS";
         break;
       default:
         throw new Error("Error: Unkown type");
@@ -182,7 +205,7 @@ export default class Protocol {
     }
 
     offset += this.#limits.command;
-    const dataBytes = buffer.readUint32(offset);
+    const dataBytes = buffer.readUint32BE(offset);
     payload.dataBytes = dataBytes;
 
     offset += this.#limits.value;

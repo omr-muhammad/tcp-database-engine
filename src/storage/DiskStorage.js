@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import MemoryStore from "./MemoryStore.js";
-import path, { parse } from "node:path";
+import path from "node:path";
 
 export default class DiskStore extends MemoryStore {
   #filePath;

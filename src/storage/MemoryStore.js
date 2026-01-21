@@ -33,7 +33,7 @@ export default class MemoryStore {
   }
 
   size() {
-    return this._store.size();
+    return this._store.size;
   }
 
   keys() {
