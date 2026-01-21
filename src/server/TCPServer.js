@@ -1,14 +1,16 @@
 import net from "node:net";
 
 import Protocol from "../protocol/Protocol.js";
-import DiskStorage from "../storage/DiskStorage.js";
+import DiskStore from "../storage/DiskStorage.js";
+import MemoryStore from "../storage/MemoryStore.js";
 
 const port = process.env.TCP_PORT;
 const host = process.env.HOST;
 
 class TCPServer {
   #server = net.createServer();
-  #store = new DiskStorage();
+  #disk = new DiskStore();
+  #store;
   #connections = new Map();
   #locks = new Map();
   #idIncrementer = 1;
@@ -29,52 +31,81 @@ class TCPServer {
     if (req.type === "SET") {
       this.#aquireLock(req.key);
       try {
-        this.#store.set(req.key, req.value);
+        const writeResult = await this.#disk.writeValue(req.valueBuf);
+
+        if (writeResult.offset === null)
+          return {
+            status: "fail",
+            message: writeResult.message,
+          };
+
+        this.#store.set(req.key, writeResult.offset);
         return {
           status: "ok",
-          data: {
-            message: `${req.key} successfully set to ${req.value}`,
-          },
+          data: `${req.key} successfully set.`,
         };
       } catch (error) {
         if (!error.message) console.log("SET Error: ", error);
 
         return {
           status: error.message ? "fail" : "error",
-          data: {
-            message: error.message || "Unkown Error.",
-          },
+          message: error.message || "Unkown Error.",
         };
       } finally {
         this.#releaseLock(req.key);
       }
     } else if (req.type === "GET") {
-      const value = this.#store.get(req.key);
+      const offset = this.#store.get(req.key);
+
+      const readResult = await this.#disk.readValue(offset);
+
+      if (!readResult.data)
+        return {
+          status: "fail",
+          message: readResult.message,
+        };
+
+      const dataStr = readResult.data.toString("utf-8");
 
       return {
         status: "ok",
-        data: {
-          value,
-        },
+        data: JSON.parse(dataStr),
       };
     } else if (req.type === "DEL") {
       this.#store.delete(req.key);
 
       return {
         status: "ok",
-        data: { message: "Key is successfully deleted." },
+        data: "Key is successfully deleted.",
       };
     } else if (req.type === "LS") {
       return {
         status: "ok",
-        data: { keys: this.#store.keys() },
+        data: this.#store.keys(),
+      };
+    } else if (req.type === "RANGE") {
+      const offsets = this.#store.range(req.key, req.endKey);
+
+      const rangeResult = await this.#disk.readRange(offsets);
+
+      if (!rangeResult.data)
+        return {
+          status: "fail",
+          message: rangeResult.message,
+        };
+
+      const values = dataBuffers.map((buff) =>
+        JSON.parse(buff.toString("utf-8")),
+      );
+
+      return {
+        status: "ok",
+        data: values,
       };
     } else {
       return {
         status: "fail",
-        data: {
-          message: `Invalid action type got ${req.type}`,
-        },
+        message: `Invalid action type got ${req.type}`,
       };
     }
   }
@@ -192,11 +223,15 @@ class TCPServer {
     this.maxConnections = maxConnections;
 
     // Start server after DB ready
-    this.#store.initialize().finally(() => {
-      this.#server.listen(port, host, () => {
-        console.log(`Server is running on ${host}:${port}`);
+    MemoryStore.create()
+      .then((store) => {
+        this.#store = store;
+      })
+      .finally(() => {
+        this.#server.listen(port, host, () => {
+          console.log(`Server is running on ${host}:${port}`);
+        });
       });
-    });
   }
 
   start() {
@@ -204,7 +239,7 @@ class TCPServer {
   }
 
   async shutdown() {
-    await this.#store.flush();
+    await this.#store.writeBTree();
     this.#server.close(() => {
       console.log("Server closed successfully.");
     });
@@ -222,7 +257,7 @@ class TCPServer {
       console.warn(
         `Warning new limit value: ${newLimit} is less than current ${
           this.#connections.size
-        } clients`
+        } clients`,
       );
       // Handle asking to perform later
 

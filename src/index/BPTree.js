@@ -30,7 +30,7 @@ export default class BPlusTree {
     if (susKey && susKey !== key)
       return mode === "range" ? { node, start: idx } : null;
 
-    return mode === "range" ? { node, start: idx } : node.pairs[idx]; // data pairs key/value
+    return mode === "range" ? { node, start: idx } : node.pairs[idx].value; // data pairs key/value
   }
 
   /* ******************************** INSERTION ******************************** */
@@ -143,7 +143,7 @@ export default class BPlusTree {
     if (node === null) return;
 
     for (let i = startIdx; i < node.keys.length; ++i) {
-      if (node.keys[i] <= endKey) result.push(node.pairs[i]);
+      if (node.keys[i] <= endKey) result.push(node.pairs[i].value);
       // Recursion exit point
       else return;
     }
