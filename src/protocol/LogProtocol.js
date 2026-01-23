@@ -1,4 +1,4 @@
-import Buffer from "node:buffer";
+import { Buffer } from "node:buffer";
 
 export default class LogProtocol {
   static #maxKeyLength = 0xffff; // 0xFFFF = 65535
