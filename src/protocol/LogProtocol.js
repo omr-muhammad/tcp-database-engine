@@ -17,13 +17,6 @@ export default class LogProtocol {
     txnId: 8,
   };
 
-  static #addLengthHead(buffer) {
-    const headBuff = Buffer.allocUnsafe(this.#limits.lengthHead);
-    headBuff.writeUint32BE(buffer.byteLength);
-
-    return Buffer.concat([headBuff, buffer]);
-  }
-
   static #allocBuffer(key, value) {
     let size = this.#limits.opt + this.#limits.key + key.length;
 
@@ -98,7 +91,7 @@ export default class LogProtocol {
       offset = this.#szValue(value, buff, offset);
     }
 
-    return this.#addLengthHead(buff);
+    return buff;
   }
 
   // buffer will be without sz head since it's for reading from file
