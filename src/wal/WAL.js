@@ -1,25 +1,23 @@
-import Buffer from "node:buffer";
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import LogProtocol from "../protocol/LogProtocol.js";
 
 export default class WAL {
   static #tnxIdCounter = 1;
-  #logFile = "data/wal.log";
-  #div = "-_-#C#O#M#M#I#T#-_-";
+  static #logFile = "data/wal.log";
+  static #div = "-_-#C#O#M#M#I#T#-_-";
 
   constructor(opt, key, value) {
+    if (opt === "SET" && !value)
+      throw new Error("Missing `value` with opteration require a value.");
+
     this.write = {
       tnxId: WAL.#tnxIdCounter,
       opt,
       key,
     };
 
-    if (opt === "SET") {
-      if (!value)
-        throw new Error("Missing `value` with opteration require a value.");
-
-      this.write.value = value;
-    }
+    if (opt === "SET") this.write.value = value;
 
     WAL.#tnxIdCounter++;
   }
@@ -30,7 +28,7 @@ export default class WAL {
       const { tnxId, opt, key, value } = this.write;
       const buffer = LogProtocol.serialize(tnxId, opt, key, value);
 
-      fileHandler = await fs.open(this.#logFile, "a");
+      fileHandler = await fs.open(WAL.#logFile, "a");
 
       await fileHandler.appendFile(buffer);
 
@@ -47,9 +45,9 @@ export default class WAL {
   async commit() {
     let fileHandler;
     try {
-      fileHandler = await fs.open(this.#logFile, "a");
+      fileHandler = await fs.open(WAL.#logFile, "a");
 
-      const divBuff = Buffer.from(this.#div);
+      const divBuff = Buffer.from(WAL.#div);
 
       await fileHandler.appendFile(divBuff);
       await fileHandler.sync();
@@ -61,7 +59,7 @@ export default class WAL {
     }
   }
 
-  async replay(disk, tree) {
+  static async replay(disk, tree) {
     let fileHandler;
 
     try {

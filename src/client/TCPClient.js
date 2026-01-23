@@ -1,4 +1,6 @@
 import net from "node:net";
+import { Buffer } from "node:buffer";
+
 import Protocol from "../protocol/Protocol.js";
 
 class TCPClient {
