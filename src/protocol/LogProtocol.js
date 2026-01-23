@@ -13,7 +13,6 @@ export default class LogProtocol {
     opt: 1,
     key: 2,
     value: 4,
-    lengthHead: 4,
     txnId: 8,
   };
 
@@ -25,10 +24,10 @@ export default class LogProtocol {
     return Buffer.alloc(size);
   }
 
-  static #szTnxId(id, buffer) {
-    buffer.writeBigUint64BE(id, 0);
+  static #szTnxId(id, buffer, offset) {
+    buffer.writeBigUint64BE(id, offset);
 
-    return this.#limits.txnId; // the offset for next write;
+    return offset + this.#limits.txnId; // the offset for next write;
   }
 
   static #szOpt(opt, buffer, offset) {
@@ -83,7 +82,9 @@ export default class LogProtocol {
   static serialize(txnId, opt, key, value) {
     const buff = this.#allocBuffer(key, value);
 
-    let offset = this.#szTnxId(txnId, buff);
+    let offset = 0;
+
+    offset = this.#szTnxId(txnId, buff, offset);
     offset = this.#szOpt(opt, buff, offset);
     offset = this.#szKey(key, buff, offset);
 
@@ -94,11 +95,6 @@ export default class LogProtocol {
     return buff;
   }
 
-  // buffer will be without sz head since it's for reading from file
-  /**
-   *
-   * @param {Buffer} buffer
-   */
   static deserialize(buffer) {
     let offset = 0;
 

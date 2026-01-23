@@ -3,6 +3,7 @@ import net from "node:net";
 import Protocol from "../protocol/Protocol.js";
 import DiskStore from "../storage/DiskStorage.js";
 import MemoryStore from "../storage/MemoryStore.js";
+import WAL from "../wal/WAL.js";
 
 const port = process.env.TCP_PORT;
 const host = process.env.HOST;
@@ -12,25 +13,31 @@ class TCPServer {
   #disk = new DiskStore();
   #store;
   #connections = new Map();
-  #locks = new Map();
+  #globalWriteLock = false;
   #idIncrementer = 1;
 
-  async #aquireLock(key) {
-    while (this.#locks.get(key)) {
-      // Wait 1ms when key is locked for safe write
+  async #acquireGlobalWriteLock() {
+    while (true) {
+      if (!this.#globalWriteLock) {
+        this.#globalWriteLock = true;
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, 1));
     }
-    this.#locks.set(key, true);
   }
 
-  #releaseLock(key) {
-    this.#locks.delete(key);
+  #releaseGlobalWriteLock() {
+    this.#globalWriteLock = false;
   }
 
   async #handleRequest(req) {
     if (req.type === "SET") {
-      this.#aquireLock(req.key);
+      this.#acquireGlobalWriteLock();
       try {
+        const log = new WAL("SET", req.key, req.value);
+
+        await log.write();
+
         const writeResult = await this.#disk.writeValue(req.valueBuf);
 
         if (writeResult.offset === null)
@@ -40,6 +47,9 @@ class TCPServer {
           };
 
         this.#store.set(req.key, writeResult.offset);
+
+        await log.commit();
+
         return {
           status: "ok",
           data: `${req.key} successfully set.`,
@@ -52,7 +62,7 @@ class TCPServer {
           message: error.message || "Unkown Error.",
         };
       } finally {
-        this.#releaseLock(req.key);
+        this.#releaseGlobalWriteLock();
       }
     } else if (req.type === "GET") {
       const offset = this.#store.get(req.key);
@@ -224,8 +234,9 @@ class TCPServer {
 
     // Start server after DB ready
     MemoryStore.create()
-      .then((store) => {
+      .then(async (store) => {
         this.#store = store;
+        await WAL.replay(this.#disk, this.#store);
       })
       .finally(() => {
         this.#server.listen(port, host, () => {
