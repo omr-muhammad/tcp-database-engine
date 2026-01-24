@@ -1,25 +1,23 @@
-import Buffer from "node:buffer";
+import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
 import LogProtocol from "../protocol/LogProtocol.js";
 
 export default class WAL {
   static #tnxIdCounter = 1;
-  #logFile = "data/wal.log";
-  #div = "-_-#C#O#M#M#I#T#-_-";
+  static #logFile = "data/wal.log";
+  static #div = "-_-#C#O#M#M#I#T#-_-";
 
   constructor(opt, key, value) {
+    if (opt === "SET" && !value)
+      throw new Error("Missing `value` with opteration require a value.");
+
     this.write = {
       tnxId: WAL.#tnxIdCounter,
       opt,
       key,
     };
 
-    if (opt === "SET") {
-      if (!value)
-        throw new Error("Missing `value` with opteration require a value.");
-
-      this.write.value = value;
-    }
+    if (opt === "SET") this.write.value = value;
 
     WAL.#tnxIdCounter++;
   }
@@ -30,7 +28,7 @@ export default class WAL {
       const { tnxId, opt, key, value } = this.write;
       const buffer = LogProtocol.serialize(tnxId, opt, key, value);
 
-      fileHandler = await fs.open(this.#logFile, "a");
+      fileHandler = await fs.open(WAL.#logFile, "a");
 
       await fileHandler.appendFile(buffer);
 
@@ -47,9 +45,9 @@ export default class WAL {
   async commit() {
     let fileHandler;
     try {
-      fileHandler = await fs.open(this.#logFile, "a");
+      fileHandler = await fs.open(WAL.#logFile, "a");
 
-      const divBuff = Buffer.from(this.#div);
+      const divBuff = Buffer.from(WAL.#div);
 
       await fileHandler.appendFile(divBuff);
       await fileHandler.sync();
@@ -61,7 +59,7 @@ export default class WAL {
     }
   }
 
-  async replay(disk, tree) {
+  static async replay(disk, tree) {
     let fileHandler;
 
     try {
@@ -69,52 +67,57 @@ export default class WAL {
       const readStream = fileHandler.createReadStream();
 
       let buff = Buffer.alloc(0);
-      readStream.on("data", (chunk) => {
-        buff = Buffer.concat([buff, chunk]);
 
-        const lastCommitIdx = buff.lastIndexOf(this.#div);
+      // Wrap in Promise to ensure that truncate run after stream events
+      await new Promise((resolve, reject) => {
+        readStream.on("data", (chunk) => {
+          buff = Buffer.concat([buff, chunk]);
+          const lastCommitIdx = buff.lastIndexOf(this.#div);
+          if (lastCommitIdx !== -1)
+            buff = buff.subarray(lastCommitIdx + this.#div.length);
+        });
 
-        if (lastCommitIdx !== -1)
-          buff = buff.subarray(lastCommitIdx + this.#div.length);
-      });
+        readStream.on("end", async () => {
+          try {
+            const lastCommitIdx = buff.lastIndexOf(this.#div);
+            if (lastCommitIdx !== -1)
+              buff = buff.subarray(lastCommitIdx + this.#div.length);
 
-      // Wait until read end and replay uncommitted logs
-      readStream.on("end", async () => {
-        const lastCommitIdx = buff.lastIndexOf(this.#div);
+            if (buff.byteLength > 0) {
+              const log = LogProtocol.deserialize(buff);
+              const { tnxId, opt, key, value } = log;
 
-        if (lastCommitIdx !== -1)
-          buff = buff.subarray(lastCommitIdx + this.#div.length);
+              if (!tnxId || !opt || !key || (opt === "SET" && !value)) {
+                console.warn("Failed to write non-full log.", log);
+                resolve();
+                return;
+              }
 
-        if (buff.byteLength > 0) {
-          const log = LogProtocol.deserialize(buff);
+              if (opt === "SET") {
+                const writeResult = await disk.writeValue(Buffer.from(value));
+                if (writeResult.offset === null) {
+                  console.error(writeResult.message);
+                  resolve();
+                  return;
+                }
+                tree.set(key, writeResult.offset);
+              }
 
-          const { tnxId, opt, key, value } = log;
-
-          if (!tnxId || !opt || !key || (opt === "SET" && !value)) {
-            console.warn("Failed to write non-full log.", log);
-            return;
-          }
-
-          if (opt === "SET") {
-            const writeResult = await disk.writeValue(Buffer.from(value));
-
-            if (writeResult.offset === null) {
-              console.error(writeResult.message);
-              return;
+              console.log("Successfully replayed a set log operation.");
             }
-
-            tree.set(key, writeResult.offset);
+            resolve(); // ✅ Resolve when done
+          } catch (err) {
+            reject(err); // ✅ Reject on error
           }
+        });
 
-          console.log("Successfully replayed a set log operation.");
-        }
+        readStream.on("error", reject);
       });
     } catch (err) {
       console.error("Replay Error: ", err.message || "Failed to replay logs.");
       console.error("Error: ", err);
     } finally {
       if (fileHandler) {
-        // Empty the log file after replay
         await fileHandler.truncate(0);
         await fileHandler.close();
       }

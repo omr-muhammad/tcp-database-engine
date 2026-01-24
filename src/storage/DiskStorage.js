@@ -47,7 +47,7 @@ export default class DiskStore {
 
     let fileHandler;
     try {
-      const fileHandler = await fs.open(this.#dataPath, "r+");
+      fileHandler = await fs.open(this.#dataPath, "a+");
       const fileStats = await fileHandler.stat();
       const offset = fileStats.size;
 

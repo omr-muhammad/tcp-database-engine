@@ -1,4 +1,5 @@
 import net from "node:net";
+import { Buffer } from "node:buffer";
 
 import Protocol from "../protocol/Protocol.js";
 import DiskStore from "../storage/DiskStorage.js";
@@ -32,9 +33,9 @@ class TCPServer {
 
   async #handleRequest(req) {
     if (req.type === "SET") {
-      this.#acquireGlobalWriteLock();
+      await this.#acquireGlobalWriteLock();
       try {
-        const log = new WAL("SET", req.key, req.value);
+        const log = new WAL("SET", req.key, req.valueBuf);
 
         await log.write();
 
@@ -104,7 +105,7 @@ class TCPServer {
           message: rangeResult.message,
         };
 
-      const values = dataBuffers.map((buff) =>
+      const values = rangeResult.data.map((buff) =>
         JSON.parse(buff.toString("utf-8")),
       );
 

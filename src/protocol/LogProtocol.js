@@ -1,4 +1,4 @@
-import Buffer from "node:buffer";
+import { Buffer } from "node:buffer";
 
 export default class LogProtocol {
   static #maxKeyLength = 0xffff; // 0xFFFF = 65535
@@ -16,6 +16,7 @@ export default class LogProtocol {
     txnId: 8,
   };
 
+  // value is buffer type
   static #allocBuffer(key, value) {
     let size = this.#limits.opt + this.#limits.key + key.length;
 
@@ -79,8 +80,8 @@ export default class LogProtocol {
 
   // constructor() {}
 
-  static serialize(txnId, opt, key, value) {
-    const buff = this.#allocBuffer(key, value);
+  static serialize(txnId, opt, key, valueBuf) {
+    const buff = this.#allocBuffer(key, valueBuf);
 
     let offset = 0;
 
@@ -89,7 +90,8 @@ export default class LogProtocol {
     offset = this.#szKey(key, buff, offset);
 
     if (opt === "SET") {
-      offset = this.#szValue(value, buff, offset);
+      valueBuf.copy(buff, offset);
+      // offset = this.#szValue(value, buff, offset);
     }
 
     return buff;
