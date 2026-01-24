@@ -35,7 +35,7 @@ export default class BPlusTree {
 
   /* ******************************** INSERTION ******************************** */
   #split(node) {
-    const splitIndex = Math.floor(node.keys.length / 2);
+    const splitIndex = Math.ceil(node.keys.length / 2);
     const splitKey = node.keys[splitIndex];
 
     // set right side
@@ -152,8 +152,20 @@ export default class BPlusTree {
     this.#getInRange(node.next, endKey, result);
   }
 
+  #collectKeys(node, result) {
+    if (!node) return;
+
+    if (node.isLeaf) {
+      result.push(...node.keys);
+    } else {
+      for (let i = 0; i < node.children.length; i++) {
+        this.#collectKeys(node.children[i], result);
+      }
+    }
+  }
+
   constructor(m = 4) {
-    this.max = m;
+    this.order = m;
     this.root = new BPTreeNode(m - 1, true);
   }
 
@@ -165,9 +177,19 @@ export default class BPlusTree {
     this.#addToNode(this.root, key, value);
   }
 
+  keys() {
+    const result = [];
+
+    this.#collectKeys(this.root, result);
+
+    return result;
+  }
+
   range(startKey, endKey) {
     const startPoint = this.#searchNode(this.root, startKey, "range");
     const range = [];
+
+    if (!startPoint || !startPoint.node) return range;
 
     this.#getInRange(startPoint.node, endKey, range, startPoint.start);
 

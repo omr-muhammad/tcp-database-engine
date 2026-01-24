@@ -1,15 +1,15 @@
 import { Buffer } from "node:buffer";
+import path from "node:path";
 import fs from "node:fs/promises";
 
 import BPTree from "../index/BPTree.js";
-import path from "node:path";
 import BPTreeNode from "../index/BPTreeNode.js";
 
 export default class MemoryStore {
   #size;
   #tree;
   #treePath;
-  #tempPath = path.resolve(this.#getFileDir(), "tempTree.db");
+  #tempPath;
 
   #getFileDir() {
     const fileIdx = this.#treePath.lastIndexOf("/");
@@ -159,6 +159,7 @@ export default class MemoryStore {
 
   async #readSerialized(blockSize) {
     try {
+      await fs.access(this.#treePath);
       const readStream = fs.createReadStream(this.#treePath);
       const serializedNodes = [];
       let block = Buffer.alloc(0);
@@ -185,15 +186,21 @@ export default class MemoryStore {
       });
     } catch (err) {
       console.error("Error reading data: 💥", err);
+      resolve([]);
     }
   }
 
   async #loadTree(blockSize = 4 * 1024) {
+    this.#tree = new BPTree(4);
+
     try {
       const serializedNodes = await this.#readSerialized(blockSize);
+
+      // return empty tree if read fail or file not exist on start
+      if (serializedNodes.length === 0) return;
+
       const deserializedNodes = this.#deserializeNodes(serializedNodes);
 
-      this.#tree = new newBTree(4);
       this.#tree.root = deserializedNodes[0];
     } catch (err) {
       console.error("Error loading tree 💥", err);
@@ -206,6 +213,8 @@ export default class MemoryStore {
   constructor(treePath = "./data/btree.db") {
     this.#size = 0;
     this.#treePath = treePath;
+
+    this.#tempPath = path.resolve(this.#getFileDir(), "tempTree.db");
   }
 
   /**
@@ -281,7 +290,7 @@ export default class MemoryStore {
     }
   }
 
-  // keys() {
-  //   return Array.from(this.#tree.keys());
-  // }
+  keys() {
+    return this.#tree.keys();
+  }
 }

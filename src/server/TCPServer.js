@@ -35,7 +35,7 @@ class TCPServer {
     if (req.type === "SET") {
       await this.#acquireGlobalWriteLock();
       try {
-        const log = new WAL("SET", req.key, req.value);
+        const log = new WAL("SET", req.key, req.valueBuf);
 
         await log.write();
 
