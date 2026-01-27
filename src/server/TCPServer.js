@@ -12,7 +12,7 @@ const host = process.env.HOST;
 class TCPServer {
   #server = net.createServer();
   #disk = new DiskStore();
-  #store;
+  #tree;
   #connections = new Map();
   #globalWriteLock = false;
   #idIncrementer = 1;
@@ -33,8 +33,8 @@ class TCPServer {
 
   async #handleRequest(req) {
     if (req.type === "SET") {
-      await this.#acquireGlobalWriteLock();
       try {
+        await this.#acquireGlobalWriteLock();
         const log = new WAL("SET", req.key, req.valueBuf);
 
         await log.write();
@@ -47,7 +47,7 @@ class TCPServer {
             message: writeResult.message,
           };
 
-        this.#store.set(req.key, writeResult.offset);
+        this.#tree.set(req.key, writeResult.offset);
 
         await log.commit();
 
@@ -66,7 +66,7 @@ class TCPServer {
         this.#releaseGlobalWriteLock();
       }
     } else if (req.type === "GET") {
-      const offset = this.#store.get(req.key);
+      const offset = this.#tree.get(req.key);
 
       const readResult = await this.#disk.readValue(offset);
 
@@ -83,7 +83,13 @@ class TCPServer {
         data: JSON.parse(dataStr),
       };
     } else if (req.type === "DEL") {
-      this.#store.delete(req.key);
+      const log = new WAL("DEL", req.key);
+
+      await log.write();
+
+      this.#tree.delete(req.key);
+
+      await log.commit();
 
       return {
         status: "ok",
@@ -92,10 +98,10 @@ class TCPServer {
     } else if (req.type === "LS") {
       return {
         status: "ok",
-        data: this.#store.keys(),
+        data: this.#tree.keys(),
       };
     } else if (req.type === "RANGE") {
-      const offsets = this.#store.range(req.key, req.endKey);
+      const offsets = this.#tree.range(req.key, req.endKey);
 
       const rangeResult = await this.#disk.readRange(offsets);
 
@@ -236,8 +242,8 @@ class TCPServer {
     // Start server after DB ready
     MemoryStore.create()
       .then(async (store) => {
-        this.#store = store;
-        await WAL.replay(this.#disk, this.#store);
+        this.#tree = store;
+        await WAL.replay(this.#disk, this.#tree);
       })
       .finally(() => {
         this.#server.listen(port, host, () => {
@@ -251,7 +257,7 @@ class TCPServer {
   }
 
   async shutdown() {
-    await this.#store.writeBTree();
+    await this.#tree.writeBTree();
     this.#server.close(() => {
       console.log("Server closed successfully.");
     });
