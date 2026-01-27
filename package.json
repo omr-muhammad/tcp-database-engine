@@ -1,6 +1,7 @@
 {
   "name": "database-engine",
   "version": "1.0.0",
+  "type": "module",
   "description": "A networked key-value database with custom TCP protocol",
   "main": "app.js",
   "scripts": {
