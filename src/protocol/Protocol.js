@@ -36,7 +36,8 @@ export default class Protocol {
     let size = this.#limits.command + this.#limits.key;
 
     if (typeof key === "object") {
-      if (key.start && key.end) size += key.start.length + key.end.length;
+      if (key.start && key.end)
+        size += key.start.length + this.#limits.key + key.end.length;
       else throw new Error("Missing range key values.");
     } else size += key.length;
 
@@ -74,10 +75,9 @@ export default class Protocol {
     return offset;
   }
 
-  static #writeSerializedValue(value, buffer, offset) {
-    if (!value) throw new Error(`Invalid value type got: ${typeof value}`);
-
-    const valueStr = JSON.stringify(value);
+  static #writeSerializedValue(valueStr, buffer, offset) {
+    if (!valueStr || typeof valueStr !== "string")
+      throw new Error(`Invalid value type got: ${typeof value}`);
 
     if (valueStr.length > this.#maxValueLength)
       throw new Error(
@@ -98,16 +98,14 @@ export default class Protocol {
 
   // *************** Public Methods ***************
   static serializeSet(key, value) {
-    const valueBuff = Buffer.from(value);
-    const valueLen = value.length;
-
-    const buffer = this.#getAllocatedBuffer(key, value);
+    const valueStr = JSON.stringify(value);
+    const buffer = this.#getAllocatedBuffer(key, valueStr);
 
     // Command must match one of the CMDs properties
     let offset = this.#writeSerializedCmd(buffer, "SET");
 
     offset = this.#writeSerializedKey(key, buffer, offset);
-    offset = this.#writeSerializedValue(value, buffer, offset);
+    offset = this.#writeSerializedValue(valueStr, buffer, offset);
 
     return this.#addLengthHead(buffer);
   }
@@ -164,18 +162,19 @@ export default class Protocol {
     if (type === this.#CMDs.SET) payload.type = "SET";
     else if (type === this.#CMDs.GET) payload.type = "GET";
     else if (type === this.#CMDs.DEL) payload.type = "DEL";
-    else if (type === this.#CMDs.LS) payload.type = "LS";
-    else throw new Error("Error: Unkown type");
+    else if (type === this.#CMDs.LS) {
+      payload.type = "LS";
+      return payload;
+    } else if (type === this.#CMDs.RANGE) payload.type = "RANGE";
+    else
+      throw new Error(
+        `Deserialize Error: Unkown command type got ${type}. expect ${Object.keys(this.#CMDs).join(" - ")}`,
+      );
 
     offset += this.#limits.command;
 
     // Deserialize Key
     const keyBytes = buffer.readUint16BE(offset);
-
-    if (keyBytes > this.#maxKeyLength)
-      throw new Error(
-        `Error: key length exceeded the limits. only 2 bytes maximum.`,
-      );
 
     offset += this.#limits.key; // start reading
     const keyBuf = buffer.subarray(offset, keyBytes + offset);
@@ -197,27 +196,23 @@ export default class Protocol {
       offset += this.#limits.value;
 
       const valueBuf = buffer.subarray(offset, valueBytes + offset);
-      // const valueString = valueBuf.toString("utf-8");
-      // const parsedValue = JSON.parse(valueString);
+
       payload.valueBuf = valueBuf;
     }
 
     return payload;
   }
 
-  static serializeResponse(status, data) {
+  static serializeResponse(status, result) {
     if (!status || !this.#allowedResponseStatus.includes(status))
       throw new Error("Error: Status Unkown.");
 
-    if (!data)
-      throw new Error(
-        "Response must contain a data object carrying response status and value or message.",
-      );
+    if (!result) throw new Error("Response must contain the server result.");
 
-    const dataString = JSON.stringify(data);
-    const dataBuff = Buffer.from(dataString);
+    const resString = JSON.stringify(result);
+    const resBuff = Buffer.from(resString);
 
-    const size = this.#limits.command + this.#limits.value + dataString.length;
+    const size = this.#limits.command + this.#limits.value + resString.length;
     const buffer = Buffer.alloc(size);
 
     let offset = 0;
@@ -230,14 +225,15 @@ export default class Protocol {
 
     offset += this.#limits.command;
 
-    buffer.writeUint32BE(dataString.length, offset);
+    buffer.writeUint32BE(resString.length, offset);
     offset += this.#limits.value;
 
-    dataBuff.copy(buffer, offset);
+    resBuff.copy(buffer, offset);
 
-    return buffer;
+    return this.#addLengthHead(buffer);
   }
 
+  // the head is subtracted from buffer before passing to function
   static deserializeResponse(buffer) {
     const payload = {};
     let offset = 0;
@@ -253,9 +249,14 @@ export default class Protocol {
 
     offset += this.#limits.value;
 
-    const dataString = buffer.subarray(offset).toString("utf-8");
-    const dataObj = JSON.parse(dataString);
-    payload.data = dataObj;
+    const strData = buffer
+      .subarray(offset, dataBytes + offset)
+      .toString("utf-8");
+
+    console.log("Data: ", strData);
+
+    const data = JSON.parse(strData);
+    payload.result = data;
 
     return payload;
   }
