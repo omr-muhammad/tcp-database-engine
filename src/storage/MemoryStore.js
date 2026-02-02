@@ -207,7 +207,7 @@ export default class MemoryStore {
 
   constructor(treePath) {
     this.#size = 0;
-    this.#treePath = treePath;
+    this.#treePath = path.resolve(treePath);
 
     this.#tempPath = path.resolve(this.#getFileDir(), "tempTree.db");
   }
