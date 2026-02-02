@@ -21,77 +21,78 @@ export default class MemoryStore {
     await fs.mkdir(this.#getFileDir(), { recursive: true });
   }
 
-  #serializeNode(node, positions) {
-    const buffer = Buffer.allocUnsafe(4096); // 4 KB
+  #BFS(queue = [], pos = 0, result = []) {
+    const node = queue[pos];
+
+    if (!node) return result;
+
+    if (!node.isLeaf) {
+      // Override children with their positions in BFS array
+      node.childIndices = node.children.map((child) => {
+        // `.push()` returns the length after pushing
+        // subtract one to get the element position
+        const chPos = queue.push(child) - 1;
+
+        return chPos;
+      });
+    }
+
+    result.push(node);
+
+    return this.#BFS(queue, ++pos, result);
+  }
+
+  #serializeNode(node) {
+    const buffer = Buffer.allocUnsafe(4 * 1024); // 4 KB
 
     let offset = 0;
 
     buffer.writeUint8(node.isLeaf ? 1 : 0, offset);
     offset++;
 
-    buffer.writeUint8(node.maxKeys);
+    buffer.writeUint8(node.maxKeys, offset);
     offset++;
 
-    buffer.writeUint16BE(node.keys.length, offset);
+    const jsonKeys = JSON.stringify(node.keys);
+    const keysBuf = Buffer.from(jsonKeys);
+
+    buffer.writeUint16BE(keysBuf.byteLength, offset);
     offset += 2; // 2 bytes;
 
-    const jsonKeys = JSON.stringify(node.keys);
-    buffer.write(jsonKeys, offset);
-    offset += jsonKeys.length;
+    keysBuf.copy(buffer, offset);
+
+    offset += keysBuf.byteLength;
 
     if (node.isLeaf) {
       const jsonPairs = JSON.stringify(node.pairs);
+      const pairsBuf = Buffer.from(jsonPairs);
 
-      buffer.writeUint16BE(jsonPairs.length, offset);
+      buffer.writeUint16BE(pairsBuf.byteLength, offset);
       offset += 2;
 
-      buffer.write(jsonPairs);
-      offset += jsonPairs.length;
+      pairsBuf.copy(buffer, offset);
+
+      offset += pairsBuf.byteLength;
 
       return buffer;
-    }
+    } else {
+      const jsonPos = JSON.stringify(node.childIndices);
+      const posBuf = Buffer.from(jsonPos);
 
-    if (positions) {
-      const jsonPos = JSON.stringify(positions);
-
-      buffer.writeUint16BE(jsonPos.length, offset);
+      buffer.writeUint16BE(posBuf.byteLength, offset);
       offset += 2;
 
-      buffer.write(jsonPos, offset);
-      offset += jsonPos.length;
+      posBuf.copy(buffer, offset);
+      offset += posBuf.byteLength;
     }
 
     return buffer;
   }
 
-  #serialize(node, nodePos = 0, childrenQ = [], result = []) {
-    // No need for all just one does the job but for explicit
-    if (
-      !node ||
-      nodePos === childrenQ.length ||
-      result.length === childrenQ.length
-    )
-      return result;
+  #serialize(root) {
+    const bfsNodes = this.#BFS([root]);
 
-    let buffer;
-    // store children positions
-    if (node.children.length > 0) {
-      const positions = [];
-      node.children.forEach((child) => {
-        const pos = childrenQ.push(child);
-
-        // pos is the length after push so pos - 1 is the last element
-        positions.push(pos - 1);
-      });
-
-      buffer = this.#serializeNode(node, positions);
-    } else {
-      buffer = this.#serializeNode(node);
-    }
-
-    result.push(buffer);
-
-    return this.#serialize(childrenQ[++nodePos], nodePos, childrenQ, result);
+    return bfsNodes.map((node) => this.#serializeNode(node));
   }
 
   #deserializeNode(nodeBuff) {
@@ -102,16 +103,17 @@ export default class MemoryStore {
     const maxKeys = nodeBuff.readUint8(offset);
     offset++;
 
-    const keysLen = nodeBuff.readUint16BE(offset);
+    const kyesBytes = nodeBuff.readUint16BE(offset);
     offset += 2;
 
     const deserializedNode = new BPTreeNode(maxKeys, isLeaf);
 
     // Keys
     const keysStr = nodeBuff
-      .subarray(offset, keysLen + offset)
+      .subarray(offset, kyesBytes + offset)
       .toString("utf-8");
-    offset += keysStr.length;
+
+    offset += kyesBytes;
 
     deserializedNode.keys = JSON.parse(keysStr);
 
@@ -123,15 +125,18 @@ export default class MemoryStore {
         .subarray(offset, childrenBytes + offset)
         .toString("utf-8");
 
+      // the parsed value is an array carry the position of each child in the dz nodes array
+      // map after finishing the dz operation to replace
       deserializedNode.children = JSON.parse(childrenStr);
     } else if (deserializedNode.isLeaf) {
-      const pairsLen = nodeBuff.readUint16BE(offset);
+      const pairsBytes = nodeBuff.readUint16BE(offset);
       offset += 2;
 
       const pairsStr = nodeBuff
-        .subarray(offset, pairsLen + offset)
+        .subarray(offset, pairsBytes + offset)
         .toString("utf-8");
-      offset += pairsLen;
+
+      offset += pairsBytes;
 
       deserializedNode.pairs = JSON.parse(pairsStr);
     }
@@ -144,14 +149,16 @@ export default class MemoryStore {
       this.#deserializeNode(nodeBuff),
     );
 
-    // replace children position with actual nodes
+    // replace positions with actual nodes
     nodes.forEach((node, idx) => {
-      node.children = node.children.map((childPos) => nodes[childPos]);
+      if (!node.isLeaf)
+        node.children = node.children.map((childPos) => {
+          nodes[childPos].parent = node;
+          return nodes[childPos];
+        });
 
-      // node.next will always point to the next node since we applied `BFS` when serializing
-      if (node.isLeaf) {
-        node.next = nodes[idx + 1] || null;
-      }
+      // `BFS` was used in sz operation so the next node will be the idx after current
+      if (node.isLeaf) node.next = nodes[idx + 1] || null;
     });
 
     return nodes;
@@ -159,38 +166,29 @@ export default class MemoryStore {
 
   async #readSerialized(blockSize) {
     try {
-      await fs.access(this.#treePath);
-      const readStream = fs.createReadStream(this.#treePath);
+      // No streams data will live in memory.
+      const fileContent = await fs.readFile(this.#treePath);
+
+      if (fileContent.byteLength === 0) return [];
+
       const serializedNodes = [];
-      let block = Buffer.alloc(0);
 
-      return new Promise((resolve, reject) => {
-        readStream.on("data", (chunk) => {
-          block = Buffer.concat([block, chunk]);
+      for (let i = 0; i < fileContent.byteLength; i += blockSize)
+        serializedNodes.push(fileContent.subarray(i, i + blockSize));
 
-          while (block.byteLength >= blockSize) {
-            serializedNodes.push(block.subarray(0, blockSize));
-            block = block.subarray(blockSize);
-          }
-        });
-
-        readStream.on("end", () => {
-          if (block.byteLength > 0) {
-            serializedNodes.push(block);
-          }
-
-          resolve(serializedNodes);
-        });
-
-        readStream.on("error", reject);
-      });
+      return serializedNodes;
     } catch (err) {
-      console.error("Error reading data: 💥", err);
-      resolve([]);
+      if (err.code === "ENOENT") {
+        console.log(`Cannot access file ${err.path}, file does not exist.`);
+      } else if (err.code === "EACCES") {
+        console.log(`Cannot access file ${err.path}, permission denied.`);
+      } else console.error("Error Reading Tree File: ", err);
+
+      return [];
     }
   }
 
-  async #loadTree(blockSize = 4 * 1024) {
+  async #loadTree(blockSize) {
     this.#tree = new BPTree(4);
 
     try {
@@ -204,45 +202,25 @@ export default class MemoryStore {
       this.#tree.root = deserializedNodes[0];
     } catch (err) {
       console.error("Error loading tree 💥", err);
-
-      // Start clean
-      this.#tree = new BPTree(4);
     }
   }
 
-  constructor(treePath = "./data/btree.db") {
+  constructor(treePath) {
     this.#size = 0;
-    this.#treePath = treePath;
+    this.#treePath = path.resolve(treePath);
 
     this.#tempPath = path.resolve(this.#getFileDir(), "tempTree.db");
   }
 
-  /**
-   *
-   * @param {String} filePath - A path to store data
-   * @param {Number} blockSize - The space for node in file in bytes default (4 * 1024 => 4 KB)
-   * @returns {MemoryStore}
-   */
-  static async create(filePath, blockSize) {
-    const store = new MemoryStore(filePath);
-    await store.#loadTree(blockSize);
-    return store;
-  }
-
-  // #isJsonSerializable(data) {
-  //   return JSON.stringify(data) ? true : false;
-  // }
-
   // value will be the start read point in the file that stored the data
   set(key, value) {
-    if (!key || typeof key !== "string" || !value || typeof value !== "number")
+    if (!key || typeof key !== "string")
       throw new Error(`Invalid key type: Expected string, got ${typeof key}`);
 
-    // Validate `value` JSON serializable
-    // if (!this.#isJsonSerializable(value))
-    //   throw new Error(
-    //     `Invalid value type, ${typeof value} is not JSON serializable.`,
-    //   );
+    if (typeof value !== "number" || value < 0)
+      throw new Error(
+        `Invalid value type: Expected number, got ${typeof value}`,
+      );
 
     this.#tree.insert(key, value);
     ++this.#size;
@@ -259,9 +237,9 @@ export default class MemoryStore {
     return result; // array carrying the offsets of data in storage file
   }
 
-  // delete(key) {
-  //   if (this.has(key)) this._store.delete(key);
-  // }
+  delete(key) {
+    this.#tree.delete(key);
+  }
 
   has(key) {
     return !!this.#tree.search(key);
@@ -271,26 +249,39 @@ export default class MemoryStore {
     return this.#size;
   }
 
+  keys() {
+    return this.#tree.keys();
+  }
+
   async writeBTree() {
     try {
       await this.#ensureWriteDir();
 
       const serializedTree = this.#serialize(this.#tree.root);
-      const fullBuff = Buffer.concat(serializedTree);
+      const treeBuf = Buffer.concat(serializedTree);
 
       // Write to temp file for safety
-      await fs.writeFile(this.#tempPath, fullBuff);
+      // No streams data already in memory 😎😎
+      await fs.writeFile(this.#tempPath, treeBuf);
 
       // Replace old with new
       await fs.rename(this.#tempPath, this.#treePath);
       console.info("Write File Successfully.");
     } catch (err) {
-      console.log("Failed to write tree.");
-      console.error("Error: ", err);
+      console.error("Failed to write Error: ", err);
     }
   }
 
-  keys() {
-    return this.#tree.keys();
+  /**
+   *
+   * @param {String} filePath - A path to store data
+   * @param {Number} blockSize - The space for node in file in bytes default (4 * 1024 => 4 KB)
+   * @returns {MemoryStore}
+   */
+  static async create(treePath = "data/btree.db", blockSize = 4 * 1024) {
+    const store = new MemoryStore(treePath);
+
+    await store.#loadTree(blockSize);
+    return store;
   }
 }

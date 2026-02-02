@@ -6,13 +6,15 @@ import DiskStore from "../storage/DiskStorage.js";
 import MemoryStore from "../storage/MemoryStore.js";
 import WAL from "../wal/WAL.js";
 
-const port = process.env.TCP_PORT;
-const host = process.env.HOST;
+// const port = process.env.TCP_PORT;
+// const host = process.env.HOST;
 
-class TCPServer {
+export default class TCPServer {
   #server = net.createServer();
   #disk = new DiskStore();
-  #tree;
+  #store;
+  #host = "0.0.0.0";
+  #port = 8000;
   #connections = new Map();
   #globalWriteLock = false;
   #idIncrementer = 1;
@@ -33,96 +35,110 @@ class TCPServer {
 
   async #handleRequest(req) {
     if (req.type === "SET") {
+      const log = new WAL("SET", req.key, req.valueBuf);
+
       try {
         await this.#acquireGlobalWriteLock();
-        const log = new WAL("SET", req.key, req.valueBuf);
 
-        await log.write();
+        await log.writeLog();
 
         const writeResult = await this.#disk.writeValue(req.valueBuf);
+
+        console.log("Disk write result: ", writeResult);
 
         if (writeResult.offset === null)
           return {
             status: "fail",
-            message: writeResult.message,
+            result: writeResult.message,
           };
 
-        this.#tree.set(req.key, writeResult.offset);
+        this.#store.set(req.key, writeResult.offset);
 
-        await log.commit();
+        console.log("key offset: ", this.#store.get(req.key));
 
         return {
           status: "ok",
-          data: `${req.key} successfully set.`,
+          result: `${req.key} successfully set.`,
         };
       } catch (error) {
         if (!error.message) console.log("SET Error: ", error);
 
         return {
           status: error.message ? "fail" : "error",
-          message: error.message || "Unkown Error.",
+          result: error.message || "Unkown Error.",
         };
       } finally {
+        // Commit both succeed and fail to not be used in replay
+        await log.commit();
         this.#releaseGlobalWriteLock();
       }
     } else if (req.type === "GET") {
-      const offset = this.#tree.get(req.key);
+      const offset = this.#store.get(req.key);
+
+      if (typeof offset !== "number" || offset < 0)
+        return {
+          status: "ok",
+          result: `Key does not exist.`,
+        };
 
       const readResult = await this.#disk.readValue(offset);
 
       if (!readResult.data)
         return {
           status: "fail",
-          message: readResult.message,
+          result: readResult.message,
         };
 
       const dataStr = readResult.data.toString("utf-8");
 
       return {
         status: "ok",
-        data: JSON.parse(dataStr),
+        result: JSON.parse(dataStr),
       };
     } else if (req.type === "DEL") {
       const log = new WAL("DEL", req.key);
 
-      await log.write();
+      await log.writeLog();
 
-      this.#tree.delete(req.key);
+      this.#store.delete(req.key);
 
       await log.commit();
 
       return {
         status: "ok",
-        data: "Key is successfully deleted.",
+        result: "Key is successfully deleted.",
       };
     } else if (req.type === "LS") {
       return {
         status: "ok",
-        data: this.#tree.keys(),
+        result: this.#store.keys(),
       };
     } else if (req.type === "RANGE") {
-      const offsets = this.#tree.range(req.key, req.endKey);
+      const pairsInRange = this.#store.range(req.key, req.endKey);
 
-      const rangeResult = await this.#disk.readRange(offsets);
+      const rangeResult = await this.#disk.readRange(pairsInRange);
+
+      console.log("Range Readed Data: ", rangeResult);
 
       if (!rangeResult.data)
         return {
           status: "fail",
-          message: rangeResult.message,
+          result: rangeResult.message,
         };
 
-      const values = rangeResult.data.map((buff) =>
-        JSON.parse(buff.toString("utf-8")),
-      );
+      const values = rangeResult.data.map((pair) => ({
+        key: pair.key,
+        value: JSON.parse(pair.valueBuf.toString("utf-8")),
+      }));
 
       return {
         status: "ok",
-        data: values,
+        result: values,
       };
     } else {
       return {
         status: "fail",
-        message: `Invalid action type got ${req.type}`,
+        result: `Invalid action type got ${req.type}`,
       };
     }
   }
@@ -156,15 +172,17 @@ class TCPServer {
         if (requestBuff.byteLength > 3)
           messageSize = requestBuff.readUint32BE(0);
 
-        // Add 4 to message size since header 4 bytes is not counted
-        if (messageSize && requestBuff.byteLength === messageSize + 4) {
-          const messageBuff = requestBuff.subarray(4);
+        // Add 4 for header buffer
+        if (messageSize && requestBuff.byteLength >= messageSize + 4) {
+          const messageBuff = requestBuff.subarray(4, messageSize + 4);
 
           const request = Protocol.deserializeRequest(messageBuff);
 
-          const { status, data } = await this.#handleRequest(request);
+          console.log("Deserialized request: ", request);
 
-          const responseBuff = Protocol.serializeResponse(status, data);
+          const { status, result } = await this.#handleRequest(request);
+
+          const responseBuff = Protocol.serializeResponse(status, result);
 
           socket.write(responseBuff);
           const activeClient = this.#connections.get(clientId);
@@ -236,28 +254,26 @@ class TCPServer {
     }
   }
 
-  constructor(host = "localhost", port = 5000, maxConnections = 5000) {
+  constructor(host = "localhost", port = 8000, maxConnections = 5000) {
+    this.#host = host;
+    this.#port = port;
     this.maxConnections = maxConnections;
-
-    // Start server after DB ready
-    MemoryStore.create()
-      .then(async (store) => {
-        this.#tree = store;
-        await WAL.replay(this.#disk, this.#tree);
-      })
-      .finally(() => {
-        this.#server.listen(port, host, () => {
-          console.log(`Server is running on ${host}:${port}`);
-        });
-      });
   }
 
-  start() {
+  async start() {
+    this.#store = await MemoryStore.create();
+
+    await WAL.replay(this.#disk, this.#store);
+
+    this.#server.listen(this.#port, this.#host, () => {
+      console.log(`Server is running on ${this.#host}:${this.#port}`);
+    });
+
     this.#server.on("connection", this.#handleConnections.bind(this));
   }
 
   async shutdown() {
-    await this.#tree.writeBTree();
+    await this.#store.writeBTree();
     this.#server.close(() => {
       console.log("Server closed successfully.");
     });
@@ -286,7 +302,3 @@ class TCPServer {
     console.log(`Max connections updated to ${newLimit}`);
   }
 }
-
-const server = new TCPServer(host, port);
-
-server.start();

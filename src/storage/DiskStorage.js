@@ -102,18 +102,26 @@ export default class DiskStore {
     }
   }
 
-  async readRange(offsets, concurrency = 20) {
+  async readRange(pairsInRange, concurrency = 20) {
+    console.log("Ranged Pairs: ", pairsInRange);
+
     const results = [];
 
-    for (let i = 0; i < offsets.length; i += concurrency) {
-      const chunk = offsets.slice(i, i + concurrency);
+    for (let i = 0; i < pairsInRange.length; i += concurrency) {
+      const chunk = pairsInRange.slice(i, i + concurrency);
 
       try {
-        const data = await Promise.all(
-          chunk.map((offset) => this.readValue(offset)),
+        const populatedPairs = await Promise.all(
+          chunk.map(async (pair) => ({
+            key: pair.key,
+            dataObj: await this.readValue(pair.value),
+          })),
         );
 
-        const buffers = data.map(({ data }) => data);
+        const buffers = populatedPairs.map((p) => ({
+          key: p.key,
+          valueBuf: p.dataObj.data,
+        }));
 
         results.push(...buffers);
       } catch (err) {
