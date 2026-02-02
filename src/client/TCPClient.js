@@ -12,22 +12,21 @@ class TCPClient {
   #applyEventListeners() {
     let fullRes = Buffer.alloc(0);
     let messageSize;
+    const headLen = 4;
     this.#clientSocket.on("data", (buffer) => {
       fullRes = Buffer.concat([fullRes, buffer]);
 
       // The message has a header with size 4 bytes to define the message length
       if (fullRes.byteLength > 3) messageSize = fullRes.readUint32BE(0);
 
-      if (messageSize && fullRes.byteLength === messageSize + 4) {
-        const responseBuff = fullRes.subarray(4);
+      if (messageSize && fullRes.byteLength >= messageSize + headLen) {
+        const responseBuff = fullRes.subarray(headLen, messageSize + headLen);
 
         try {
           const res = Protocol.deserializeResponse(responseBuff);
 
-          const label = res.data ? "Data" : "Message";
-
-          console.log(`Response Status: ${res.status}.`);
-          console.log(`${label}: ${res[label.toLowerCase()]}`);
+          console.log(`Status: ${res.status}.`);
+          console.log(`Result: ${res.result}`);
         } catch (error) {
           console.log("Error Message: ", error.message);
           console.error("Client Deserialize Error: ", error);
@@ -44,8 +43,8 @@ class TCPClient {
     });
 
     this.#clientSocket.on("error", (error) => {
-      console.log("Error Msg: ", error.message);
-      console.log("Erorr: ", error);
+      console.log("Socket Error Msg: ", error.message);
+      console.log("Socket Erorr: ", error);
 
       if (error.code === "ECONNREFUSED") {
         console.error(`Connection refused to ${this.#host}:${this.#port}`);
@@ -138,3 +137,5 @@ class TCPClient {
     this.#sendRequest("range", { start: startKey, end: endKey });
   }
 }
+
+export default TCPClient;

@@ -13,20 +13,27 @@ export default class LogProtocol {
     opt: 1,
     key: 2,
     value: 4,
-    txnId: 8,
+    txnId: 4,
   };
 
   // value is buffer type
   static #allocBuffer(key, value) {
     let size = this.#limits.opt + this.#limits.key + key.length;
 
-    if (value) size += this.#limits.value + value.length;
+    if (value) size += this.#limits.value + value.byteLength;
 
     return Buffer.alloc(size);
   }
 
+  /**
+   *
+   * @param {*} id
+   * @param {Buffer} buffer
+   * @param {*} offset
+   * @returns
+   */
   static #szTnxId(id, buffer, offset) {
-    buffer.writeBigUint64BE(id, offset);
+    buffer.writeUint32BE(id, offset);
 
     return offset + this.#limits.txnId; // the offset for next write;
   }
@@ -58,25 +65,25 @@ export default class LogProtocol {
     return offset + this.#limits.key + keyLen;
   }
 
-  static #szValue(value, buffer, offset) {
-    if (!value) throw new Error(`Invalid value type got: ${typeof value}`);
+  // static #szValue(value, buffer, offset) {
+  //   if (!value) throw new Error(`Invalid value type got: ${typeof value}`);
 
-    const valueStr = JSON.stringify(value);
+  //   const valueStr = JSON.stringify(value);
 
-    if (valueStr.length > this.#maxValueLength)
-      throw new Error(
-        `Error: out of range ${valueStr.length} > ${this.#maxValueLength}`,
-      );
+  //   if (valueStr.length > this.#maxValueLength)
+  //     throw new Error(
+  //       `Error: out of range ${valueStr.length} > ${this.#maxValueLength}`,
+  //     );
 
-    const valueLen = valueStr.length;
-    const valueBuff = Buffer.from(valueStr);
+  //   const valueLen = valueStr.length;
+  //   const valueBuff = Buffer.from(valueStr);
 
-    buffer.writeUint32BE(valueLen, offset);
+  //   buffer.writeUint32BE(valueLen, offset);
 
-    valueBuff.copy(buffer, offset + this.#limits.value);
+  //   valueBuff.copy(buffer, offset + this.#limits.value);
 
-    return offset + this.#limits.value + valueLen;
-  }
+  //   return offset + this.#limits.value + valueLen;
+  // }
 
   // constructor() {}
 
@@ -89,10 +96,7 @@ export default class LogProtocol {
     offset = this.#szOpt(opt, buff, offset);
     offset = this.#szKey(key, buff, offset);
 
-    if (opt === "SET") {
-      valueBuf.copy(buff, offset);
-      // offset = this.#szValue(value, buff, offset);
-    }
+    if (opt === "SET") valueBuf.copy(buff, offset);
 
     return buff;
   }
@@ -102,13 +106,19 @@ export default class LogProtocol {
 
     const log = {};
 
-    log.txnId = buffer.readBigUint64BE(0);
+    log.txnId = buffer.readUint32BE(0);
     offset += this.#limits.txnId;
 
     const opt = buffer.readUint8(offset);
 
-    if (opt === 1) log.opt = "SET";
-    else if (opt === 2) log.opt = "DEL";
+    const validOpts = Object.values(this.#opTypes);
+
+    if (!validOpts.includes(opt))
+      throw new Error(
+        `Invalid operation type. Expected ${Object.keys(this.#opTypes).join(" - ")}`,
+      );
+
+    log.opt = opt === 1 ? "SET" : "DEL";
 
     offset += this.#limits.opt;
 
