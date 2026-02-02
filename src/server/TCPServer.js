@@ -114,9 +114,11 @@ export default class TCPServer {
         result: this.#store.keys(),
       };
     } else if (req.type === "RANGE") {
-      const offsets = this.#store.range(req.key, req.endKey);
+      const pairsInRange = this.#store.range(req.key, req.endKey);
 
-      const rangeResult = await this.#disk.readRange(offsets);
+      const rangeResult = await this.#disk.readRange(pairsInRange);
+
+      console.log("Range Readed Data: ", rangeResult);
 
       if (!rangeResult.data)
         return {
@@ -124,9 +126,10 @@ export default class TCPServer {
           result: rangeResult.message,
         };
 
-      const values = rangeResult.data.map((buff) =>
-        JSON.parse(buff.toString("utf-8")),
-      );
+      const values = rangeResult.data.map((pair) => ({
+        key: pair.key,
+        value: JSON.parse(pair.valueBuf.toString("utf-8")),
+      }));
 
       return {
         status: "ok",

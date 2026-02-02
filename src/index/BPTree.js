@@ -27,7 +27,7 @@ export default class BPlusTree {
     // Look at #binarySearch to know why passing idx directly is correct
     if (!node.isLeaf) {
       const childIdx = found ? idx + 1 : idx;
-      return this.#searchNode(node.children[childIdx], key);
+      return this.#searchNode(node.children[childIdx], key, mode);
     }
 
     if (mode === "range") return { node, start: idx };
@@ -301,16 +301,15 @@ export default class BPlusTree {
   }
 
   #getInRange(node, endKey, result, startIdx = 0) {
-    // For the end of the tree
-    if (node === null) return;
+    // Tree End
+    if (!node) return;
 
-    for (let i = startIdx; i < node.keys.length; ++i) {
-      if (node.keys[i] <= endKey) result.push(node.pairs[i].value);
-      // Recursion exit point
+    for (let i = startIdx; i < node.pairs.length; ++i) {
+      if (node.pairs[i].key <= endKey) result.push(node.pairs[i]);
+      // Recursion exit point (out of range)
       else return;
     }
 
-    // if no return go next node
     this.#getInRange(node.next, endKey, result);
   }
 
@@ -353,6 +352,7 @@ export default class BPlusTree {
 
   range(startKey, endKey) {
     const startPoint = this.#searchNode(this.root, startKey, "range");
+
     const range = [];
 
     if (!startPoint || !startPoint.node) return range;

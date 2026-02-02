@@ -39,7 +39,7 @@ class TCPClient {
 
     // Fires after `end` and `error`
     this.#clientSocket.on("close", () => {
-      console.log("Connection End!\n");
+      console.log("CLIENT CLOSED\n");
     });
 
     this.#clientSocket.on("error", (error) => {
@@ -56,6 +56,7 @@ class TCPClient {
     // Handling Timeouts
     this.#clientSocket.setTimeout(30000); // wait 30s for receiving chunks
     this.#clientSocket.on("timeout", () => {
+      console.log("Connection Timouted Out.");
       this.disconnect(); // leave server
 
       this.reconnect();
@@ -134,6 +135,9 @@ class TCPClient {
   }
 
   range(startKey, endKey) {
+    console.log("Start Key: ", startKey);
+    console.log("End Key: ", endKey);
+
     this.#sendRequest("range", { start: startKey, end: endKey });
   }
 }

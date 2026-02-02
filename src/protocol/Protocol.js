@@ -36,7 +36,8 @@ export default class Protocol {
     let size = this.#limits.command + this.#limits.key;
 
     if (typeof key === "object") {
-      if (key.start && key.end) size += key.start.length + key.end.length;
+      if (key.start && key.end)
+        size += key.start.length + this.#limits.key + key.end.length;
       else throw new Error("Missing range key values.");
     } else size += key.length;
 
@@ -164,7 +165,8 @@ export default class Protocol {
     else if (type === this.#CMDs.LS) {
       payload.type = "LS";
       return payload;
-    } else
+    } else if (type === this.#CMDs.RANGE) payload.type = "RANGE";
+    else
       throw new Error(
         `Deserialize Error: Unkown command type got ${type}. expect ${Object.keys(this.#CMDs).join(" - ")}`,
       );
