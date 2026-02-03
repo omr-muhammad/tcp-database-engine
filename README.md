@@ -63,70 +63,70 @@ A custom key-value database built from scratch with TCP networking, binary proto
 │                    TCP Database Engine                  │
 └─────────────────────────────────────────────────────────┘
 
-        Multiple Clients (CLI/Programmatic)                    
-              ↓ ↓ ↓                          
-        ┌──────────────┐                     
+        Multiple Clients (CLI/Programmatic)
+              ↓ ↓ ↓
+        ┌──────────────┐
         │  Interactive │ ← Menu-driven UI
         │     CLI      │ ← Input validation
         │  (Week 3+)   │ ← Type builders
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
+        └──────────────┘
+              ↓
+        ┌──────────────┐
         │  TCP Client  │ ← Auto-reconnect
         │   Library    │ ← Response handling
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
-        │  TCP Server  │                     
-        │  Port: 8000  │                     
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │  TCP Server  │
+        │  Port: 8000  │
+        └──────────────┘
+              ↓
+        ┌──────────────┐
         │   Protocol   │ ← Length-Prefix Framing
-        │   Parser     │ ← Binary Messages  
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
-        │ Connection   │ ← Max Limit: 5000  
-        │ Manager      │ ← Timeout: 30s     
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
+        │   Parser     │ ← Binary Messages
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │ Connection   │ ← Max Limit: 5000
+        │ Manager      │ ← Timeout: 30s
+        └──────────────┘
+              ↓
+        ┌──────────────┐
         │ Concurrency  │ ← Global Write Lock
-        │ Control      │ ← Safe Writes      
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
-        │     WAL      │ ← Transaction Log  
-        │   (Week 3)   │ ← Crash Recovery   
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
-        │   B+Tree     │ ← Key → Offset     
-        │   Index      │ ← Range Queries    
-        │   (Week 3)   │ ← O(log n) Lookup  
-        └──────────────┘                     
-              ↓                              
-        ┌──────────────┐                     
-        │ Disk Storage │ ← Offset-based     
-        │   Engine     │ ← Append-only      
-        └──────────────┘                     
-              ↓                              
-┌─────────────────────────────────┐          
-│     Persistence Layer           │          
-├─────────────────────────────────┤          
-│  • B+Tree file (btree.db)       │          
-│  • Data file (data.db)          │          
-│  • WAL file (wal.log)           │          
-└─────────────────────────────────┘          
-              ↓                              
-        ┌────────────┐                       
-        │ File System│                       
-        │  /data/    │                       
-        │  btree.db  │                       
-        │  data.db   │                       
-        │  wal.log   │                       
-        └────────────┘                       
+        │ Control      │ ← Safe Writes
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │     WAL      │ ← Transaction Log
+        │   (Week 3)   │ ← Crash Recovery
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │   B+Tree     │ ← Key → Offset
+        │   Index      │ ← Range Queries
+        │   (Week 3)   │ ← O(log n) Lookup
+        └──────────────┘
+              ↓
+        ┌──────────────┐
+        │ Disk Storage │ ← Offset-based
+        │   Engine     │ ← Append-only
+        └──────────────┘
+              ↓
+┌─────────────────────────────────┐
+│     Persistence Layer           │
+├─────────────────────────────────┤
+│  • B+Tree file (btree.db)       │
+│  • Data file (data.db)          │
+│  • WAL file (wal.log)           │
+└─────────────────────────────────┘
+              ↓
+        ┌────────────┐
+        │ File System│
+        │  /data/    │
+        │  btree.db  │
+        │  data.db   │
+        │  wal.log   │
+        └────────────┘
 ```
 
 ### Data Flow
@@ -280,6 +280,7 @@ The database now includes a full-featured interactive command-line interface tha
 ### CLI Features
 
 **📋 Menu-Driven Interface**
+
 ```
 Available Operations:
 ────────────────────────────────────────
@@ -291,10 +292,11 @@ Available Operations:
 
   Type ".exit" to cancel/quit
 ────────────────────────────────────────
-Enter your choice: 
+Enter your choice:
 ```
 
 **✅ Input Validation**
+
 - Keys: Non-empty strings, max 65,535 characters
 - Numbers: Proper numeric validation
 - Booleans: "true"/"false" only
@@ -303,6 +305,7 @@ Enter your choice:
 
 **🎨 Type Support**
 The CLI supports building complex data structures:
+
 - **String**: Simple text values
 - **Number**: Integers and decimals
 - **Boolean**: true/false values
@@ -310,6 +313,7 @@ The CLI supports building complex data structures:
 - **Object**: Nested key-value pairs with dynamic types
 
 **📦 Advanced Features**
+
 - **Array of Objects**: Define schema once, build multiple objects
 - **Schema Validation**: Ensures all objects in arrays match structure
 - **Iterative Building**: Build complex values step-by-step
@@ -319,6 +323,7 @@ The CLI supports building complex data structures:
 ### CLI Usage Examples
 
 **Starting the CLI:**
+
 ```bash
 npm start
 
@@ -330,6 +335,7 @@ npm start
 ```
 
 **Setting a Simple Value:**
+
 ```
 Enter your choice: 1
 
@@ -354,6 +360,7 @@ Result: username successfully set.
 ```
 
 **Setting a Complex Object:**
+
 ```
 Enter your choice: 1
 
@@ -387,6 +394,7 @@ Add another key? (yes/no): no
 ```
 
 **Setting an Array of Objects:**
+
 ```
 Enter your choice: 1
 
@@ -432,6 +440,7 @@ Schema defined:
 ```
 
 **Getting a Value:**
+
 ```
 Enter your choice: 2
 
@@ -446,6 +455,7 @@ Result: {"name":"Alice","age":30}
 ```
 
 **Range Query:**
+
 ```
 Enter your choice: 5
 
@@ -465,6 +475,7 @@ Result: [
 ```
 
 **Listing All Keys:**
+
 ```
 Enter your choice: 4
 
@@ -475,6 +486,7 @@ Result: ["username","user:1","user:2","user:10"]
 ```
 
 **Deleting a Key:**
+
 ```
 Enter your choice: 3
 
@@ -557,6 +569,7 @@ Every message is prefixed with its total length to enable proper message framing
 - **Message Payload**: Variable length - Actual command/response data
 
 **Why length-prefix?**
+
 - TCP is a stream protocol, messages can be split or merged
 - Length prefix ensures proper message boundaries
 - Enables efficient buffering and parsing
@@ -574,13 +587,13 @@ All requests follow this structure:
 
 ### Command Types
 
-| Command | Code | Description |
-|---------|------|-------------|
-| SET | 0x01 | Store a key-value pair |
-| GET | 0x02 | Retrieve a value by key |
-| DEL | 0x03 | Delete a key-value pair |
-| LS | 0x04 | List all keys |
-| RANGE | 0x08 | Query keys within a range |
+| Command | Code | Description               |
+| ------- | ---- | ------------------------- |
+| SET     | 0x01 | Store a key-value pair    |
+| GET     | 0x02 | Retrieve a value by key   |
+| DEL     | 0x03 | Delete a key-value pair   |
+| LS      | 0x04 | List all keys             |
+| RANGE   | 0x08 | Query keys within a range |
 
 ### Response Format
 
@@ -594,6 +607,7 @@ All responses include a status code:
 ```
 
 **Status Codes:**
+
 - `0x05` - RESPONSE_OK: Operation successful
 - `0x06` - RESPONSE_FAIL: Operation failed
 - `0x07` - RESPONSE_ERROR: Server error occurred
@@ -605,11 +619,13 @@ All responses include a status code:
 **Purpose**: Store or update a key-value pair
 
 **Binary Layout:**
+
 ```
 [4-byte Length][0x01][2-byte KeyLen][Key][4-byte ValueLen][Value]
 ```
 
 **Example:**
+
 ```javascript
 // Client code
 client.set('user:123', { name: 'Alice', age: 30 });
@@ -624,6 +640,7 @@ client.set('user:123', { name: 'Alice', age: 30 });
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -636,11 +653,13 @@ client.set('user:123', { name: 'Alice', age: 30 });
 **Purpose**: Retrieve a value by its key
 
 **Binary Layout:**
+
 ```
 [4-byte Length][0x02][2-byte KeyLen][Key]
 ```
 
 **Example:**
+
 ```javascript
 // Client code
 client.get('user:123');
@@ -653,6 +672,7 @@ client.get('user:123');
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -668,11 +688,13 @@ client.get('user:123');
 **Purpose**: Delete a key-value pair
 
 **Binary Layout:**
+
 ```
 [4-byte Length][0x03][2-byte KeyLen][Key]
 ```
 
 **Example:**
+
 ```javascript
 // Client code
 client.delete('user:123');
@@ -685,6 +707,7 @@ client.delete('user:123');
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -697,11 +720,13 @@ client.delete('user:123');
 **Purpose**: List all keys in the database
 
 **Binary Layout:**
+
 ```
 [4-byte Length][0x04]
 ```
 
 **Example:**
+
 ```javascript
 // Client code
 client.list();
@@ -712,6 +737,7 @@ client.list();
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -724,11 +750,13 @@ client.list();
 **Purpose**: Query keys within a specified range (inclusive)
 
 **Binary Layout:**
+
 ```
 [4-byte Length][0x08][2-byte StartKeyLen][StartKey][2-byte EndKeyLen][EndKey]
 ```
 
 **Example:**
+
 ```javascript
 // Client code
 client.range('user:100', 'user:999');
@@ -743,6 +771,7 @@ client.range('user:100', 'user:999');
 ```
 
 **Response:**
+
 ```json
 {
   "status": "ok",
@@ -756,15 +785,16 @@ client.range('user:100', 'user:999');
 
 ### Protocol Limits
 
-| Type | Maximum Size | Encoding |
-|------|-------------|----------|
+| Type           | Maximum Size        | Encoding |
+| -------------- | ------------------- | -------- |
 | Message Length | 4,294,967,295 bytes | uint32BE |
-| Key Length | 65,535 bytes | uint16BE |
-| Value Length | 4,294,967,295 bytes | uint32BE |
+| Key Length     | 65,535 bytes        | uint16BE |
+| Value Length   | 4,294,967,295 bytes | uint32BE |
 
 ### Error Handling
 
 **Client-Side Errors:**
+
 ```json
 {
   "status": "fail",
@@ -773,6 +803,7 @@ client.range('user:100', 'user:999');
 ```
 
 **Server-Side Errors:**
+
 ```json
 {
   "status": "error",
@@ -781,6 +812,7 @@ client.range('user:100', 'user:999');
 ```
 
 **Protocol Violations:**
+
 - Invalid command codes → Connection terminated
 - Key/value too long → Connection terminated
 - Malformed messages → Connection terminated
@@ -820,6 +852,7 @@ Each log entry contains:
 ```
 
 **After Restart:**
+
 - TxnID 1: Already committed → Skip
 - TxnID 2: No commit marker → Replay operation
 
@@ -858,6 +891,7 @@ For detailed WAL protocol documentation, see [LOG_PROTOCOL_README.md](LOG_PROTOC
 ### Implementation Details
 
 **Tree Properties:**
+
 - **Order**: 4 (max 3 keys per node)
 - **Leaf Nodes**: Linked for range queries
 - **Internal Nodes**: Store routing keys only
@@ -867,21 +901,22 @@ For detailed WAL protocol documentation, see [LOG_PROTOCOL_README.md](LOG_PROTOC
 
 ```javascript
 // Insert: O(log n)
-tree.insert('user:1', 1024);  // key → offset
+tree.insert("user:1", 1024); // key → offset
 
 // Search: O(log n)
-const offset = tree.search('user:1');
+const offset = tree.search("user:1");
 
 // Range: O(log n + k)
-const offsets = tree.range('user:1', 'user:99');
+const offsets = tree.range("user:1", "user:99");
 
 // Delete: O(log n)
-tree.delete('user:1');
+tree.delete("user:1");
 ```
 
 ### Node Structure
 
 **Internal Node:**
+
 ```javascript
 {
   keys: ['user:100', 'user:500', 'user:900'],
@@ -891,6 +926,7 @@ tree.delete('user:1');
 ```
 
 **Leaf Node:**
+
 ```javascript
 {
   keys: ['user:1', 'user:2', 'user:3'],
@@ -930,25 +966,29 @@ Reconstruct leaf next pointers
 ### Server Features
 
 **Multi-Client Support:**
+
 - Handles 5000+ simultaneous connections
 - Each client gets unique ID
 - Connection tracking with timestamps
 
 **Concurrency Control:**
+
 - Global write lock prevents race conditions
 - All clients share lock
 - Reads can happen concurrently (future optimization)
 
 **Timeout Management:**
+
 - 30-second idle timeout per connection
 - Auto-disconnect and cleanup
 - Graceful handling of slow clients
 
 **Connection Limits:**
+
 ```javascript
 // When limit reached
 if (connections.size >= maxConnections) {
-  socket.end('ERR max connections reached\n');
+  socket.end("ERR max connections reached\n");
 }
 
 // Dynamic limit adjustment
@@ -959,25 +999,27 @@ server.setMaxConnections(newLimit);
 ### Client Features
 
 **Auto-Reconnection:**
+
 ```javascript
 // On connection failure
-if (error.code === 'ECONNREFUSED') {
+if (error.code === "ECONNREFUSED") {
   // Wait 3 seconds, then reconnect
   setTimeout(() => this.connect(), 3000);
 }
 ```
 
 **Buffer Management:**
+
 ```javascript
 // Handle partial messages
 let buffer = Buffer.alloc(0);
 
-socket.on('data', (chunk) => {
+socket.on("data", (chunk) => {
   buffer = Buffer.concat([buffer, chunk]);
-  
+
   // Read length header
   const messageLength = buffer.readUint32BE(0);
-  
+
   // Wait for complete message
   if (buffer.length >= 4 + messageLength) {
     const message = buffer.subarray(4, 4 + messageLength);
@@ -988,6 +1030,7 @@ socket.on('data', (chunk) => {
 ```
 
 **Error Handling:**
+
 - Network errors logged but don't crash
 - Protocol errors close connection
 - Timeout errors trigger reconnection
@@ -1013,6 +1056,7 @@ Disk (data.db):
 ```
 
 **Benefits:**
+
 - Keys stay in fast memory
 - Values can be huge without memory impact
 - Sequential disk writes are fast
@@ -1020,6 +1064,7 @@ Disk (data.db):
 ### File Structure
 
 **data.db Format:**
+
 ```
 [Entry 1: Length + Value]
 [Entry 2: Length + Value]
@@ -1028,6 +1073,7 @@ Disk (data.db):
 ```
 
 Each entry:
+
 ```
 ┌──────────────┬─────────────────┐
 │ Value Length │  Value (JSON)   │
@@ -1064,12 +1110,12 @@ async readRange(offsets, concurrency = 20) {
   // Read in batches to avoid overwhelming I/O
   for (let i = 0; i < offsets.length; i += 20) {
     const batch = offsets.slice(i, i + 20);
-    
+
     // Read batch concurrently
     const results = await Promise.all(
       batch.map(offset => readValue(offset))
     );
-    
+
     // Collect results
     allResults.push(...results);
   }
@@ -1077,6 +1123,7 @@ async readRange(offsets, concurrency = 20) {
 ```
 
 **Performance:**
+
 - Single read: ~1-3ms
 - Range read (100 keys): ~50-100ms (with batching)
 - Write: ~2-5ms (including WAL)
@@ -1086,6 +1133,7 @@ async readRange(offsets, concurrency = 20) {
 ## 🚀 Installation & Usage
 
 ### Prerequisites
+
 - Node.js 18+ (for ES modules support)
 - npm or yarn
 
@@ -1093,7 +1141,7 @@ async readRange(offsets, concurrency = 20) {
 
 ```bash
 # Clone repository
-git clone <your-repo-url>
+git clone https://github.com/omr-muhammad/tcp-database-engine.git
 cd tcp-database-engine
 
 # Install dependencies (if any)
@@ -1105,30 +1153,8 @@ mkdir -p data
 
 ### Running the System
 
-**Option 1: Start Server + Interactive CLI**
-```bash
-npm start
+**Option 1: Server Only (for development)**
 
-# Output:
-╔════════════════════════════════════════════╗
-║     Key-Value Database Engine              ║
-╚════════════════════════════════════════════╝
-
-Server is running on 0.0.0.0:8000
-✅ Server is ready!
-
-📌 Connecting CLI client...
-
-╔════════════════════════════════════════════╗
-║     Key-Value Database CLI                 ║
-║     Type ".exit" at any prompt to quit     ║
-╚════════════════════════════════════════════╝
-
-Available Operations:
-...
-```
-
-**Option 2: Server Only (for development)**
 ```bash
 npm run dev
 
@@ -1137,6 +1163,7 @@ Server is running on 0.0.0.0:8000
 ```
 
 **Environment Variables:**
+
 ```bash
 # .env file
 HOST=0.0.0.0
@@ -1153,28 +1180,51 @@ The interactive CLI provides a menu-driven interface:
 4. **View results**: Server responses display automatically
 5. **Exit anytime**: Type `.exit` at any prompt
 
+**Option 2: Start Server + Interactive CLI**
+
+- **_NOTE: Server must be running first._**
+
+```bash
+npm start
+
+# Output:
+✅ Server is ready!
+
+📌 Connecting CLI client...
+
+Connected to localhost:8000
+
+╔════════════════════════════════════════════╗
+║     Key-Value Database CLI                 ║
+║     Type ".exit" at any prompt to quit     ║
+╚════════════════════════════════════════════╝
+
+Available Operations:
+...
+```
+
 ### Programmatic Usage
 
 ```javascript
-import TCPClient from './src/client/TCPClient.js';
+import TCPClient from "./src/client/TCPClient.js";
 
-const client = new TCPClient('localhost', 8000);
+const client = new TCPClient("localhost", 8000);
 client.connect();
 
 // Store data
-client.set('user:1', { name: 'John', age: 30 });
+client.set("user:1", { name: "John", age: 30 });
 
 // Retrieve data
-client.get('user:1');
+client.get("user:1");
 
 // Range query
-client.range('user:1', 'user:99');
+client.range("user:1", "user:99");
 
 // List all keys
 client.list();
 
 // Delete key
-client.delete('user:1');
+client.delete("user:1");
 
 // Disconnect
 client.disconnect();
@@ -1226,6 +1276,7 @@ tcp-database-engine/
 ## 🗺️ Roadmap
 
 ### ✅ Week 1: Storage Layer & Protocol (COMPLETED)
+
 - [x] In-memory key-value store
 - [x] Disk persistence with atomic writes
 - [x] Binary protocol design
@@ -1233,6 +1284,7 @@ tcp-database-engine/
 - [x] Basic validation
 
 ### ✅ Week 2: TCP Networking (COMPLETED)
+
 - [x] TCP server implementation
 - [x] Length-prefix message framing
 - [x] Multi-client connection handling
@@ -1243,6 +1295,7 @@ tcp-database-engine/
 - [x] Graceful shutdown
 
 ### ✅ Week 3: Indexing & Reliability (COMPLETED)
+
 - [x] B+Tree data structure with linked leaf nodes
 - [x] Offset-based storage architecture
 - [x] Write-Ahead Log (WAL) with transaction IDs
@@ -1253,6 +1306,7 @@ tcp-database-engine/
 - [x] Tree serialization (BFS approach)
 
 ### ✅ Week 3+: Interactive CLI (COMPLETED)
+
 - [x] Menu-driven operation selection
 - [x] Input validation system
 - [x] Type builders (string, number, boolean, array, object)
@@ -1263,6 +1317,7 @@ tcp-database-engine/
 - [x] Response formatting and display
 
 ### 📅 Week 4: Transactions (UPCOMING)
+
 - [ ] Multi-operation transactions (BEGIN/COMMIT/ROLLBACK)
 - [ ] Transaction isolation levels
 - [ ] Rollback on error
@@ -1272,6 +1327,7 @@ tcp-database-engine/
 - [ ] Transaction CLI commands
 
 ### 📅 Week 5: Performance & Testing (PLANNED)
+
 - [ ] Performance benchmarks
 - [ ] Load testing (1000+ ops/sec)
 - [ ] Stress testing (connection limits)
@@ -1403,17 +1459,17 @@ MIT License - Feel free to use this for learning!
 
 ## 🔍 How It Compares to Redis
 
-| Feature                  | This Project        | Redis              |
-|--------------------------|---------------------|--------------------|
-| Data Structure           | B+Tree              | Hash Table + Skip List |
-| Range Queries            | ✅ Native           | ✅ Via Sorted Sets  |
-| Persistence              | WAL + Snapshots     | RDB + AOF          |
-| Memory Model             | Offset-based        | In-memory          |
-| Protocol                 | Custom Binary       | RESP               |
-| Transactions             | 🔄 Coming Soon      | ✅ Full Support    |
-| CLI Interface            | ✅ Interactive Menu | ✅ redis-cli       |
-| Clustering               | ❌ Single Node      | ✅ Cluster Mode    |
-| Data Types               | Key-Value Only      | Multiple Types     |
+| Feature        | This Project        | Redis                  |
+| -------------- | ------------------- | ---------------------- |
+| Data Structure | B+Tree              | Hash Table + Skip List |
+| Range Queries  | ✅ Native           | ✅ Via Sorted Sets     |
+| Persistence    | WAL + Snapshots     | RDB + AOF              |
+| Memory Model   | Offset-based        | In-memory              |
+| Protocol       | Custom Binary       | RESP                   |
+| Transactions   | 🔄 Coming Soon      | ✅ Full Support        |
+| CLI Interface  | ✅ Interactive Menu | ✅ redis-cli           |
+| Clustering     | ❌ Single Node      | ✅ Cluster Mode        |
+| Data Types     | Key-Value Only      | Multiple Types         |
 
 **Key Difference**: This project uses offset-based storage (keys in memory, values on disk), while Redis keeps everything in memory for maximum speed.
 
