@@ -9,5 +9,8 @@
     "dev": "node --env-file=.env server.js"
   },
   "author": "Omar",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "crc": "^4.3.2"
+  }
 }
