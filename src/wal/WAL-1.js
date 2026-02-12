@@ -47,7 +47,7 @@ async function initWAL(filePath) {
  *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, oldValue: object, newValue: object }} record -
  * @returns {Buffer};
  */
-export function encodeLogRecord(record) {
+function encodeLogRecord(record) {
   const recIdBuf = Buffer.from(record.recordId);
   const oldValueBuf = Buffer.from(JSON.stringify(record.oldValue));
   const newValueBuf = Buffer.from(JSON.stringify(record.newValue));
@@ -81,7 +81,7 @@ export function encodeLogRecord(record) {
  *
  * @param {Buffer} encodedRecord
  */
-export function decodeLogRecord(encodedRecord) {
+function decodeLogRecord(encodedRecord) {
   try {
     const headerSize = calcHeader();
     const payloadSizeOffset = headerSize - sizes.checksum - sizes.payloadLen;
@@ -113,6 +113,27 @@ export function decodeLogRecord(encodedRecord) {
     console.debug("Decode Error: ", error.message);
     console.error(error);
     process.exit(1);
+  }
+}
+
+async function appendToWAL(filePath, record) {
+  const recBuf = encodeLogRecord(record);
+
+  let fd;
+  try {
+    fd = await fs.open(filePath, "a");
+    const stats = await fd.stat();
+
+    const lsn = stats.size;
+
+    await fd.appendFile(recBuf);
+
+    return lsn;
+  } catch (error) {
+    console.debug("Appending to Wal file Error: ", error.message);
+    console.error(error);
+  } finally {
+    if (fd) await fd.close();
   }
 }
 
@@ -150,8 +171,7 @@ function getHeaderBuf(size = 256, lsnStart = 1) {
 
 /**
  *
- * @param {Buffer} buffer
- * @param {{ start: number, end: number }} exclude
+ * @param {...Buffer} buffers
  * @returns {number}
  */
 function getCRC32(...buffers) {
