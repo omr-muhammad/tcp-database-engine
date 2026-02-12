@@ -1,6 +1,5 @@
 import { Buffer } from "node:buffer";
 import fs from "node:fs/promises";
-import crypto from "node:crypto";
 
 import crc from "crc";
 
@@ -21,6 +20,7 @@ const sizes = {
   payloadLen: 4,
   checksum: 4,
   valueLen: 4,
+  recordIdLen: 2,
 };
 
 async function initWAL(filePath) {
@@ -45,8 +45,9 @@ async function initWAL(filePath) {
  *
  * @param {{
  *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, oldValue: object, newValue: object }} record -
+ * @returns {Buffer};
  */
-function encodeLogRecord(record) {
+export function encodeLogRecord(record) {
   const recIdBuf = Buffer.from(record.recordId);
   const oldValueBuf = Buffer.from(JSON.stringify(record.oldValue));
   const newValueBuf = Buffer.from(JSON.stringify(record.newValue));
@@ -60,7 +61,7 @@ function encodeLogRecord(record) {
   const headerBuf = bufferHeader(record, headerSize, payloadSize);
   const payloadBuf = bufferPayload(
     payloadSize,
-    idBuf,
+    recIdBuf,
     oldValueBuf,
     newValueBuf,
   );
@@ -68,10 +69,51 @@ function encodeLogRecord(record) {
   const checksum = getCRC32(headerBuf, payloadBuf);
 
   // write checksum to header
-  const checksumOffset = headerSize - 4;
+  const checksumOffset = headerSize - sizes.checksum;
   headerBuf.writeUint32BE(checksum, checksumOffset);
 
-  return Buffer.concat([headerBuf, payloadBuf]);
+  const encodedRecord = Buffer.concat([headerBuf, payloadBuf]);
+
+  return encodedRecord;
+}
+
+/**
+ *
+ * @param {Buffer} encodedRecord
+ */
+export function decodeLogRecord(encodedRecord) {
+  try {
+    const headerSize = calcHeader();
+    const payloadSizeOffset = headerSize - sizes.checksum - sizes.payloadLen;
+    const checksumOffset = headerSize - sizes.checksum;
+
+    const payloadSize = encodedRecord.readUint32BE(payloadSizeOffset);
+    const checksum = encodedRecord.readUint32BE(checksumOffset);
+
+    // replace checksum with zeros after extracting it
+    encodedRecord.writeUint32BE(0, checksumOffset);
+
+    const curChecksum = getCRC32(encodedRecord);
+
+    if (curChecksum !== checksum) throw new Error("Corrupted record.");
+
+    const headerBuf = encodedRecord.subarray(0, headerSize);
+    const payloadBuf = encodedRecord.subarray(headerSize);
+
+    if (payloadBuf.length !== payloadSize)
+      throw new Error("Corrupted payload.");
+
+    const record = {};
+
+    decodeHeader(record, headerBuf);
+    decodePayload(record, payloadBuf);
+
+    return record;
+  } catch (error) {
+    console.debug("Decode Error: ", error.message);
+    console.error(error);
+    process.exit(1);
+  }
 }
 
 // HELPER FUNCTIONS /////////////////////////////////////////////////////////////////////////////////
@@ -110,6 +152,7 @@ function getHeaderBuf(size = 256, lsnStart = 1) {
  *
  * @param {Buffer} buffer
  * @param {{ start: number, end: number }} exclude
+ * @returns {number}
  */
 function getCRC32(...buffers) {
   const data = Buffer.concat(buffers);
@@ -160,22 +203,74 @@ function bufferPayload(payloadSize, idBuf, oldValueBuf, newValueBuf) {
   let offset = 0;
 
   payloadBuf.writeUint16BE(idBuf.length, offset);
-  offset += 2;
+  offset += sizes.recordIdLen;
 
   idBuf.copy(payloadBuf, offset);
   offset += idBuf.length;
 
   payloadBuf.writeUint32BE(oldValueBuf.length, offset);
-  offset += 4;
+  offset += sizes.valueLen;
 
   oldValueBuf.copy(payloadBuf, offset);
   offset += oldValueBuf.length;
 
   payloadBuf.writeUint32BE(newValueBuf.length, offset);
-  offset += 4;
+  offset += sizes.valueLen;
 
   newValueBuf.copy(payloadBuf, offset);
   offset += newValueBuf.length;
 
   return payloadBuf;
+}
+
+function decodeType(type) {
+  const commands = Object.keys(opType);
+
+  return commands[type - 1];
+}
+
+function decodeHeader(record, headerBuf) {
+  let offset = 0;
+
+  record.lsn = headerBuf.readBigUint64BE(offset);
+  offset += sizes.lsn;
+
+  const type = headerBuf.readUint8(offset);
+  record.type = decodeType(type);
+  offset += sizes.type;
+
+  const txId = headerBuf.readBigUint64BE(offset);
+  record.txId = `tx_${txId}`;
+  offset += sizes.txId;
+
+  record.prevLSN = headerBuf.readBigUint64BE(offset);
+  offset += sizes.lsn;
+
+  record.pageId = headerBuf.readUint32BE(offset);
+  offset += sizes.pageId;
+}
+
+function decodePayload(record, payloadBuf) {
+  let offset = 0;
+
+  const idLen = payloadBuf.readUint16BE(offset);
+  offset += sizes.recordIdLen;
+
+  const idBuf = payloadBuf.subarray(offset, idLen + offset);
+  record.recordId = idBuf.toString("utf-8");
+  offset += idLen;
+
+  const oldValueLen = payloadBuf.readUint32BE(offset);
+  offset += sizes.valueLen;
+
+  const oldValueBuf = payloadBuf.subarray(offset, oldValueLen + offset);
+  record.oldValue = JSON.parse(oldValueBuf.toString());
+  offset += oldValueLen;
+
+  const newValueLen = payloadBuf.readUint32BE(offset);
+  offset += sizes.valueLen;
+
+  const newValueBuf = payloadBuf.subarray(offset, newValueLen + offset);
+  record.newValue = JSON.parse(newValueBuf.toString());
+  offset += newValueLen;
 }
