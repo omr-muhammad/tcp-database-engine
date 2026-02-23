@@ -23,6 +23,8 @@ const sizes = {
   recordIdLen: 2,
 };
 
+const markerRecs = ["BEGIN", "COMMIT", "ABORT"];
+
 async function initWAL(filePath) {
   const headerBuf = getHeaderBuf();
 
@@ -44,10 +46,29 @@ async function initWAL(filePath) {
 /**
  *
  * @param {{
+ *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string }} record -
+ * @returns {Buffer};
+ */
+function encodeMarkerRecord(record) {
+  const headerSize = calcHeader();
+  const headerBuf = bufferHeader(record, headerSize, 0);
+  const checksumOffset = headerSize - sizes.checksum;
+
+  headerBuf.writeUint32BE(0, checksumOffset);
+
+  return headerBuf;
+}
+
+/**
+ *
+ * @param {{
  *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, oldValue: object, newValue: object }} record -
  * @returns {Buffer};
  */
 function encodeLogRecord(record) {
+  // markerRecs => BEGIN, COMMIT, ABORT
+  if (markerRecs.includes(record.type)) return encodeLogRecord(record);
+
   const recIdBuf = Buffer.from(record.recordId);
   const oldValueBuf = Buffer.from(JSON.stringify(record.oldValue));
   const newValueBuf = Buffer.from(JSON.stringify(record.newValue));
@@ -87,6 +108,13 @@ function decodeLogRecord(encodedRecord) {
     const payloadSizeOffset = headerSize - sizes.checksum - sizes.payloadLen;
     const checksumOffset = headerSize - sizes.checksum;
 
+    const record = {};
+    const headerBuf = encodedRecord.subarray(0, headerSize);
+    decodeHeader(record, headerBuf);
+
+    // markerRecs => BEGIN, COMMIT, ABORT
+    if (markerRecs.includes(record.type)) return record;
+
     const payloadSize = encodedRecord.readUint32BE(payloadSizeOffset);
     const checksum = encodedRecord.readUint32BE(checksumOffset);
 
@@ -97,13 +125,10 @@ function decodeLogRecord(encodedRecord) {
 
     if (curChecksum !== checksum) throw new Error("Corrupted record.");
 
-    const headerBuf = encodedRecord.subarray(0, headerSize);
     const payloadBuf = encodedRecord.subarray(headerSize);
 
     if (payloadBuf.length !== payloadSize)
       throw new Error("Corrupted payload.");
-
-    const record = {};
 
     decodeHeader(record, headerBuf);
     decodePayload(record, payloadBuf);
