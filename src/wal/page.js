@@ -51,13 +51,18 @@ export function getPageFilePath(pageId) {
 
 /**
  * @param {{ pageId, pageLSN: 0, data: {}, dirty: false }} page - Page object to serialize
+ * @param {number} fd - File Handler
  */
-export async function save(page) {
+export async function save(page, fd) {
+  if (!page || !fd)
+    throw new Error(
+      "Missing required parameter page object and/or file handler.",
+    );
   const pageFilePath = getPageFilePath(page.pageId);
   const pageBuf = serializePage(page);
 
   try {
-    await fs.writeFile(pageFilePath, pageBuf);
+    await fd.writeFile(pageFilePath, pageBuf);
     console.info("Write Page Successfully.");
   } catch (error) {
     console.log("Error Writing Page to File: ", error.message);

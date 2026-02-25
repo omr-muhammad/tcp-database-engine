@@ -3,6 +3,9 @@ import fs from "node:fs/promises";
 
 import crc from "crc";
 
+export const currLSN = 0;
+export const walPath = "logs/wal.log";
+
 const opType = {
   BEGIN: 1,
   COMMIT: 2,
@@ -10,6 +13,7 @@ const opType = {
   UPDATE: 4,
   INSERT: 5,
   DELETE: 6,
+  CLR: 7,
 };
 
 const sizes = {
@@ -19,6 +23,7 @@ const sizes = {
   pageId: 4,
   payloadLen: 4,
   checksum: 4,
+  keyLen: 2,
   valueLen: 4,
   recordIdLen: 2,
 };
@@ -46,36 +51,26 @@ async function initWAL(filePath) {
 /**
  *
  * @param {{
- *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string }} record -
- * @returns {Buffer};
- */
-function encodeMarkerRecord(record) {
-  const headerSize = calcHeader();
-  const headerBuf = bufferHeader(record, headerSize, 0);
-  const checksumOffset = headerSize - sizes.checksum;
-
-  headerBuf.writeUint32BE(0, checksumOffset);
-
-  return headerBuf;
-}
-
-/**
- *
- * @param {{
- *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, oldValue: object, newValue: object }} record -
+ *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, key: string, oldValue: object, newValue: object }} record -
  * @returns {Buffer};
  */
 function encodeLogRecord(record) {
   // markerRecs => BEGIN, COMMIT, ABORT
   if (markerRecs.includes(record.type)) return encodeLogRecord(record);
+  if (record.type === "CLR") return encodeCLRRecord(record);
 
   const recIdBuf = Buffer.from(record.recordId);
+  const keyBuf = Buffer.from(record.key);
   const oldValueBuf = Buffer.from(JSON.stringify(record.oldValue));
   const newValueBuf = Buffer.from(JSON.stringify(record.newValue));
 
-  // 10 = 2(id length) + 8(old&new value lengths)
+  // 12 = 4(id & key lengths) + 8(old&new value lengths)
   const payloadSize =
-    recIdBuf.length + oldValueBuf.length + newValueBuf.length + 10;
+    recIdBuf.length +
+    keyBuf.length +
+    oldValueBuf.length +
+    newValueBuf.length +
+    12;
   const headerSize = calcHeader();
 
   // Last 4 bytes wasn't written (filled with zeros)
@@ -83,6 +78,7 @@ function encodeLogRecord(record) {
   const payloadBuf = bufferPayload(
     payloadSize,
     recIdBuf,
+    keyBuf,
     oldValueBuf,
     newValueBuf,
   );
@@ -107,6 +103,9 @@ function decodeLogRecord(encodedRecord) {
     const headerSize = calcHeader();
     const payloadSizeOffset = headerSize - sizes.checksum - sizes.payloadLen;
     const checksumOffset = headerSize - sizes.checksum;
+
+    const type = encodedRecord.readUint8(sizes.lsn); // skip the lsn bytes
+    if (type === opType.CLR) return decodeCLRRecord(encodedRecord);
 
     const record = {};
     const headerBuf = encodedRecord.subarray(0, headerSize);
@@ -141,7 +140,7 @@ function decodeLogRecord(encodedRecord) {
   }
 }
 
-async function appendToWAL(filePath, record) {
+export async function appendToWAL(filePath, record) {
   const recBuf = encodeLogRecord(record);
 
   let fd;
@@ -243,7 +242,7 @@ function bufferHeader(record, headSize, payloadSize) {
   return buf;
 }
 
-function bufferPayload(payloadSize, idBuf, oldValueBuf, newValueBuf) {
+function bufferPayload(payloadSize, idBuf, keyBuf, oldValueBuf, newValueBuf) {
   const payloadBuf = Buffer.alloc(payloadSize);
   let offset = 0;
 
@@ -252,6 +251,12 @@ function bufferPayload(payloadSize, idBuf, oldValueBuf, newValueBuf) {
 
   idBuf.copy(payloadBuf, offset);
   offset += idBuf.length;
+
+  payloadBuf.writeUint16BE(keyBuf.length, offset);
+  offset += sizes.keyLen;
+
+  keyBuf.copy(payloadBuf, offset);
+  offset += keyBuf.length;
 
   payloadBuf.writeUint32BE(oldValueBuf.length, offset);
   offset += sizes.valueLen;
@@ -266,6 +271,115 @@ function bufferPayload(payloadSize, idBuf, oldValueBuf, newValueBuf) {
   offset += newValueBuf.length;
 
   return payloadBuf;
+}
+
+function encodeMarkerRecord(record) {
+  const headerSize = calcHeader();
+  const headerBuf = bufferHeader(record, headerSize, 0);
+  const checksumOffset = headerSize - sizes.checksum;
+
+  headerBuf.writeUint32BE(0, checksumOffset);
+
+  return headerBuf;
+}
+
+function getCLRLogSize(keyBuf, valueBuf) {
+  return (
+    sizes.lsn * 2 +
+    sizes.type +
+    sizes.txId +
+    sizes.pageId +
+    sizes.keyLen +
+    keyBuf.length +
+    sizes.valueLen +
+    valueBuf.length
+  );
+}
+
+/**
+ *
+ * @param {{ lsn: clrLSN, type: "CLR", txId: current.txId, undoNextLSN: current.prevLSN, pageId: current.pageId, key: current.key, oldValue: current.oldValue }} clrRec
+ * @returns
+ */
+function encodeCLRRecord(clrRec) {
+  const keyBuf = Buffer.from(clrRec.key);
+  const valueBuf = Buffer.from(clrRec.oldValue);
+  const size = getCLRLogSize(keyBuf, valueBuf);
+  const buf = Buffer.alloc(size);
+  let offset = 0;
+
+  buf.writeBigUint64BE(lsn, offset);
+  offset += sizes.lsn;
+
+  buf.writeUint8(opType.CLR, offset);
+  offset += sizes.type;
+
+  const txIdNum = parseInt(clrRec.txId.split("_")[1]);
+  buf.writeBigInt64BE(txIdNum, offset);
+  offset += sizes.txId;
+
+  buf.writeBigInt64BE(clrRec.undoNextLSN, offset);
+  offset += sizes.lsn;
+
+  buf.writeUint32BE(clrRec.pageId, offset);
+  offset += sizes.pageId;
+
+  buf.writeUint16BE(keyBuf.length, offset);
+  offset += sizes.keyLen;
+
+  keyBuf.copy(buf, offset);
+  offset += keyBuf.length;
+
+  buf.writeUint32BE(valueBuf.length, offset);
+  offset += sizes.valueLen;
+
+  valueBuf.copy(buf, offset);
+  offset += valueBuf.length;
+
+  return buf;
+}
+
+/**
+ *
+ * @param {Buffer} buffer
+ * @returns
+ */
+function decodeCLRRecord(buffer) {
+  const clr = {};
+  let offset = 0;
+
+  clr.lsn = buffer.readBigUint64BE(offset);
+  offset += sizes.lsn;
+
+  const opType = buffer.readUint8(offset);
+  clr.type = decodeType(opType);
+  offset += sizes.type;
+
+  const txId = buffer.readBigInt64BE(offset);
+  clr.txId = `tx_${txId}`;
+  offset += sizes.txId;
+
+  clr.undoNextLSN = buffer.readBigInt64BE(clrRec.undoNextLSN, offset);
+  offset += sizes.lsn;
+
+  clr.pageId = buffer.readUint32BE(clrRec.pageId, offset);
+  offset += sizes.pageId;
+
+  const keyBufLen = buffer.readUint16BE(offset);
+  offset += sizes.keyLen;
+
+  const keyBuf = buffer.subarray(offset, keyBufLen + offset);
+  clr.key = keyBuf.toString("utf-8");
+  offset += keyBuf.length;
+
+  const oldValueBufLen = buffer.readUint32BE(offset);
+  offset += sizes.valueLen;
+
+  const valueBuf = buffer.subarray(offset, oldValueBufLen + offset);
+  clr.oldValue = valueBuf.toString("utf-8");
+  offset += valueBuf.length;
+
+  return clr;
 }
 
 function decodeType(type) {
