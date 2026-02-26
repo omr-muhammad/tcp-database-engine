@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import * as pgManager from "./page.js";
-import { appendToWAL, currLSN, encode, walPath } from "./WAL-1.js";
+import { appendToWAL, syncWAL } from "./WAL-1.js";
 /**
  * @constant { Map<number, { pageId: number, pageLSN: BigInt, data: Object, dirty: boolean, }> }
  */
@@ -112,15 +112,22 @@ async function loadingPagesGroup(records) {
   loadedPages.forEach((pg) => pages.set(pg.pageId, pg));
 }
 
-async function handleRecover(records) {
-  await loadingPagesGroup(records);
-
+function analyse(records) {
+  // Committed
   const committedRecs = new Set();
   for (const rec of records)
     if (rec.type === "COMMIT") committedRecs.add(rec.txId);
 
-  // REDO all
-  let applied, skipped, rolled;
+  // UnCommitted
+  const ucRecords = records.filter((rec) => !committedRecs.has(rec.txId));
+  const ucRecsMap = new Map(ucRecords.map((rec) => [rec.lsn, rec]));
+
+  return [committedRecs, ucRecords, ucRecsMap];
+}
+
+function redo(records) {
+  let applied = 0;
+  let skipped = 0;
   for (const rec of records) {
     if (["COMMIT", "BEGIN", "ABORT"].includes(rec.type)) continue;
 
@@ -128,15 +135,18 @@ async function handleRecover(records) {
 
     // Only apply what never reached the disk
     if (rec.lsn >= page.pageLSN) {
-      applied++;
       page.data[rec.key] = rec.newValue;
       markDirty(page.pageId, rec.lsn);
+
+      applied++;
     } else skipped++;
   }
 
-  // uc => un committed
-  const ucRecords = records.filter((rec) => !committedRecs.has(rec.txId));
-  const ucRecsMap = new Map(ucRecords.map((rec) => [rec.lsn, rec]));
+  return [applied, records];
+}
+
+async function undo(records, ucRecords, ucRecsMap) {
+  let rolled = 0;
 
   const lastCLRPerTx = new Map();
   for (const rec of records)
@@ -158,6 +168,7 @@ async function handleRecover(records) {
       current = ucRecsMap.get(clr.undoNextLSN);
     }
 
+    const CLRBatcher = [];
     while (current && current.prevLSN !== null) {
       const page = pages.get(current.pageId);
 
@@ -166,9 +177,8 @@ async function handleRecover(records) {
 
       rolled++;
 
-      const clrLSN = currLSN++;
+      // appendToWAL will add lsn before appending
       const clrRecord = {
-        lsn: clrLSN,
         type: "CLR",
         txId: current.txId,
         undoNextLSN: current.prevLSN,
@@ -178,24 +188,31 @@ async function handleRecover(records) {
       };
 
       // add to memory then flush later
-      await appendToWAL(walPath, clrRecord);
+      CLRBatcher.push(appendToWAL(clrRecord));
       current = ucRecsMap.get(current.prevLSN);
     }
 
+    await Promise.all(CLRBatcher);
     completedUndo.add(ucRec.txId);
   }
 
-  let fd;
-  try {
-    fd = await fs.open(walPath, "a");
-    await fd.sync();
-  } catch (error) {
-    console.log("Error syncing the wal file during recover: ", error.message);
-    console.error(error);
-  } finally {
-    if (fd) await fd.close();
-  }
+  return rolled;
+}
 
+async function handleRecover(records) {
+  await loadingPagesGroup(records);
+
+  // Analyze Phase
+  // uc => uncommitted
+  const [committedRecs, ucRecords, ucRecsMap] = analyse(records);
+
+  // Redo Phase
+  let [applied, skipped] = redo(records);
+
+  // Undo Phase
+  let rolled = await undo(records, ucRecords, ucRecsMap);
+
+  await syncWAL();
   await flushAll();
 }
 // async function applyWALEntry(record)

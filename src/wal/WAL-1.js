@@ -30,7 +30,7 @@ const sizes = {
 
 const markerRecs = ["BEGIN", "COMMIT", "ABORT"];
 
-async function initWAL(filePath) {
+export async function initWAL(filePath) {
   const headerBuf = getHeaderBuf();
 
   let fd;
@@ -48,6 +48,42 @@ async function initWAL(filePath) {
   }
 }
 
+export async function appendToWAL(record) {
+  record.lsn = currLSN++;
+  const recBuf = encodeLogRecord(record);
+
+  let fd;
+  try {
+    fd = await fs.open(walPath, "a");
+    const stats = await fd.stat();
+
+    const lsn = stats.size;
+
+    await fd.appendFile(recBuf);
+
+    return lsn;
+  } catch (error) {
+    console.debug("Appending to Wal file Error: ", error.message);
+    console.error(error);
+  } finally {
+    if (fd) await fd.close();
+  }
+}
+
+export async function syncWAL() {
+  let fd;
+  try {
+    fd = await fs.open(walPath, "a");
+    await fd.sync();
+    console.log("WAL successfully synced.");
+  } catch (error) {
+    console.log("Error syncing the wal file during recover: ", error.message);
+    console.error(error);
+  } finally {
+    if (fd) await fd.close();
+  }
+}
+
 /**
  *
  * @param {{
@@ -56,7 +92,7 @@ async function initWAL(filePath) {
  */
 function encodeLogRecord(record) {
   // markerRecs => BEGIN, COMMIT, ABORT
-  if (markerRecs.includes(record.type)) return encodeLogRecord(record);
+  if (markerRecs.includes(record.type)) return encodeMarkerRecord(record);
   if (record.type === "CLR") return encodeCLRRecord(record);
 
   const recIdBuf = Buffer.from(record.recordId);
@@ -137,27 +173,6 @@ function decodeLogRecord(encodedRecord) {
     console.debug("Decode Error: ", error.message);
     console.error(error);
     process.exit(1);
-  }
-}
-
-export async function appendToWAL(filePath, record) {
-  const recBuf = encodeLogRecord(record);
-
-  let fd;
-  try {
-    fd = await fs.open(filePath, "a");
-    const stats = await fd.stat();
-
-    const lsn = stats.size;
-
-    await fd.appendFile(recBuf);
-
-    return lsn;
-  } catch (error) {
-    console.debug("Appending to Wal file Error: ", error.message);
-    console.error(error);
-  } finally {
-    if (fd) await fd.close();
   }
 }
 
@@ -339,11 +354,6 @@ function encodeCLRRecord(clrRec) {
   return buf;
 }
 
-/**
- *
- * @param {Buffer} buffer
- * @returns
- */
 function decodeCLRRecord(buffer) {
   const clr = {};
   let offset = 0;
