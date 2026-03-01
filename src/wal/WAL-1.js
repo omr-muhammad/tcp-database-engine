@@ -3,8 +3,13 @@ import fs from "node:fs/promises";
 
 import crc from "crc";
 
-export const currLSN = 0;
-export const walPath = "logs/wal.log";
+import * as groupCommit from "./groupCommit.js";
+import * as pool from "./bufferBool.js";
+
+const currLSN = 0;
+const walPath = "logs/wal.log";
+const activeTransactions = new Map();
+const simpleSeparator = ")}]/:!:/[{(";
 
 const opType = {
   BEGIN: 1,
@@ -51,6 +56,7 @@ export async function initWAL(filePath) {
 export async function appendToWAL(record) {
   record.lsn = currLSN++;
   const recBuf = encodeLogRecord(record);
+  const toAppend = Buffer.concat([recBuf, Buffer.from(simpleSeparator)]);
 
   let fd;
   try {
@@ -59,7 +65,7 @@ export async function appendToWAL(record) {
 
     const lsn = stats.size;
 
-    await fd.appendFile(recBuf);
+    await fd.appendFile(toAppend);
 
     return lsn;
   } catch (error) {
@@ -83,6 +89,65 @@ export async function syncWAL() {
     if (fd) await fd.close();
   }
 }
+
+export async function begin() {
+  const random = Math.random().toString().replace(".", "");
+  const big = BigInt(Date.now() + Number(random));
+  const txId = `tx_${big}`;
+  const recordId = `id_${big}`;
+
+  const record = {
+    type: "BEGIN",
+    txId,
+    prevLSN: null,
+    recordId,
+  };
+
+  // lsn will be added there
+  await appendToWAL(record);
+
+  activeTransactions.set(txId, {
+    operations: [],
+  });
+
+  return txId;
+}
+
+export async function commit(txId, prevLSN) {
+  if (!activeTransactions.has(txId))
+    throw new Error(`No such active transaction with id ${txId}`);
+
+  const recordId = `id_${txId.split("_")[1]}`;
+  const record = {
+    type: "COMMIT",
+    txId,
+    prevLSN,
+    recordId,
+  };
+
+  await appendToWAL(record);
+
+  await groupCommit.addToGroup(txId);
+
+  activeTransactions.delete(txId);
+}
+
+export async function recover() {
+  const fileContent = await fs.readFile(walPath);
+  const recordsBuffs = fileContent.split(simpleSeparator);
+  const decodedRecs = recordsBuffs.map((rec) => decodeLogRecord(rec));
+
+  const result = await pool.handleRecover(decodedRecs);
+
+  console.log("Successful Recover Result");
+  console.log("Redo Count: ", result.applied);
+  console.log("Skipped Count: ", result.skipped);
+  console.log("Undo Count: ", result.rolled);
+}
+
+// HELPER FUNCTIONS //////////////////////////////////////////// HELPER FUNCTIONS //
+///////////////////////////////// HELPER FUNCTIONS /////////////////////////////////
+// HELPER FUNCTIONS //////////////////////////////////////////// HELPER FUNCTIONS //
 
 /**
  *
@@ -130,10 +195,6 @@ function encodeLogRecord(record) {
   return encodedRecord;
 }
 
-/**
- *
- * @param {Buffer} encodedRecord
- */
 function decodeLogRecord(encodedRecord) {
   try {
     const headerSize = calcHeader();
@@ -176,11 +237,6 @@ function decodeLogRecord(encodedRecord) {
   }
 }
 
-// HELPER FUNCTIONS /////////////////////////////////////////////////////////////////////////////////
-////////////////////// HELPER FUNCTIONS /////////////////////////////////////////////////////////////
-////////////////////////////////////////// HELPER FUNCTIONS /////////////////////////////////////////
-///////////////////////////////////////////////////////////// HELPER FUNCTIONS //////////////////////
-///////////////////////////////////////////////////////////////////////////////// HELPER FUNCTIONS //
 function getHeaderBuf(size = 256, lsnStart = 1) {
   const headerBuf = Buffer.alloc(size);
   let offset = 0;

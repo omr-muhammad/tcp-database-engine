@@ -199,7 +199,7 @@ async function undo(records, ucRecords, ucRecsMap) {
   return rolled;
 }
 
-async function handleRecover(records) {
+export async function handleRecover(records) {
   await loadingPagesGroup(records);
 
   // Analyze Phase
@@ -214,5 +214,7 @@ async function handleRecover(records) {
 
   await syncWAL();
   await flushAll();
+
+  return { applied, skipped, rolled };
 }
 // async function applyWALEntry(record)
