@@ -155,7 +155,7 @@ export async function recover() {
  *  lsn: BigInt, type: string, txId: string, prevLSN: BigInt, pageId: number, recordId: string, key: string, oldValue: object, newValue: object }} record -
  * @returns {Buffer};
  */
-function encodeLogRecord(record) {
+export function encodeLogRecord(record) {
   // markerRecs => BEGIN, COMMIT, ABORT
   if (markerRecs.includes(record.type)) return encodeMarkerRecord(record);
   if (record.type === "CLR") return encodeCLRRecord(record);
@@ -195,7 +195,7 @@ function encodeLogRecord(record) {
   return encodedRecord;
 }
 
-function decodeLogRecord(encodedRecord) {
+export function decodeLogRecord(encodedRecord) {
   try {
     const headerSize = calcHeader();
     const payloadSizeOffset = headerSize - sizes.checksum - sizes.payloadLen;
@@ -300,8 +300,10 @@ function bufferHeader(record, headSize, payloadSize) {
   buf.writeBigUint64BE(BigInt(txIdNum), offset);
   offset += sizes.txId;
 
-  buf.writeBigUint64BE(record.prevLSN, offset);
-  offset += sizes.lsn;
+  if (record.prevLSN || record.undoNextLSN) {
+    buf.writeBigUint64BE(record.prevLSN || record.undoNextLSN, offset);
+    offset += sizes.lsn;
+  }
 
   buf.writeUint32BE(record.pageId, offset);
   offset += sizes.pageId;
@@ -379,14 +381,14 @@ function encodeCLRRecord(clrRec) {
   const buf = Buffer.alloc(size);
   let offset = 0;
 
-  buf.writeBigUint64BE(lsn, offset);
+  buf.writeBigUint64BE(BigInt(clrRec.lsn), offset);
   offset += sizes.lsn;
 
   buf.writeUint8(opType.CLR, offset);
   offset += sizes.type;
 
   const txIdNum = parseInt(clrRec.txId.split("_")[1]);
-  buf.writeBigInt64BE(txIdNum, offset);
+  buf.writeBigInt64BE(BigInt(txIdNum), offset);
   offset += sizes.txId;
 
   buf.writeBigInt64BE(clrRec.undoNextLSN, offset);
@@ -425,10 +427,10 @@ function decodeCLRRecord(buffer) {
   clr.txId = `tx_${txId}`;
   offset += sizes.txId;
 
-  clr.undoNextLSN = buffer.readBigInt64BE(clrRec.undoNextLSN, offset);
+  clr.undoNextLSN = buffer.readBigInt64BE(offset);
   offset += sizes.lsn;
 
-  clr.pageId = buffer.readUint32BE(clrRec.pageId, offset);
+  clr.pageId = buffer.readUint32BE(offset);
   offset += sizes.pageId;
 
   const keyBufLen = buffer.readUint16BE(offset);
@@ -468,8 +470,12 @@ function decodeHeader(record, headerBuf) {
   record.txId = `tx_${txId}`;
   offset += sizes.txId;
 
-  record.prevLSN = headerBuf.readBigUint64BE(offset);
-  offset += sizes.lsn;
+  if (record.type === "BEGIN") record.prevLSN = null;
+  else {
+    const key = record.type === "CLR" ? "undoNextLSN" : "prevLSN";
+    record[key] = headerBuf.readBigUint64BE(offset);
+    offset += sizes.lsn;
+  }
 
   record.pageId = headerBuf.readUint32BE(offset);
   offset += sizes.pageId;
@@ -484,6 +490,13 @@ function decodePayload(record, payloadBuf) {
   const idBuf = payloadBuf.subarray(offset, idLen + offset);
   record.recordId = idBuf.toString("utf-8");
   offset += idLen;
+
+  const keyLen = payloadBuf.readUint16BE(offset);
+  offset += sizes.keyLen;
+
+  const keyBuf = payloadBuf.subarray(offset, keyLen + offset);
+  record.key = keyBuf.toString();
+  offset += keyBuf.length;
 
   const oldValueLen = payloadBuf.readUint32BE(offset);
   offset += sizes.valueLen;
